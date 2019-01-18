@@ -82,6 +82,17 @@ Comments can be entered by prefixing them with a `;`. At this time, multi-line c
     - The 6809 expects the most-significant byte at the lowest address.
 - `ORG` &mdash; start assembling at the supplied address, eg. `@label ORG $3FFF ; continue assembling at address 16383`.
 
+### Endianism ###
+
+Motorola microprocessors are big endian, ie. the most-significant byte is written at the lowest  memory address and the least-significant byte is written at the highest address.
+
+For example: store the 16-bit value `0x1A2B` from the address `0xFF00`:
+
+```
+0xFF00    0x1A
+0xFF01    0x2B
+```
+
 ## Command Line ##
 
 *spasm* is a command line tool. It supports the following switches:
