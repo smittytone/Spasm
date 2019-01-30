@@ -36,7 +36,7 @@ ERRORS  = { "0": "No error",
 ADDR_MODE_NONE         = 0
 ADDR_MODE_IMMEDIATE    = 1
 ADDR_MODE_DIRECT       = 2
-ADDR_MODE_EXT_INDIRECT = 3
+ADDR_MODE_INDIRECT     = 3
 ADDR_MODE_EXTENDED     = 4
 ADDR_MODE_INHERENT     = 5
 BRANCH_MODE_SHORT      = 1
@@ -571,7 +571,7 @@ def decodeOpnd(opnd, op, data):
 
     if len(opndString) > 0 and opndString[0] == "(":
         # Extended indirect addressing
-        data.opType = ADDR_MODE_EXT_INDIRECT
+        data.opType = ADDR_MODE_INDIRECT
         opndString = opndString[1:-1]
         opndValue = 0x9F
         data.indexAddress = getValue(opndString)
@@ -702,7 +702,7 @@ def writeCode(lineParts, op, opnd, data):
                     data.opType = ADDR_MODE_EXTENDED
                 elif opnd > 127 or opnd < -128:
                     # Do 16-bit address
-                    data.opType = ADDR_MODE_EXT_INDIRECT
+                    data.opType = ADDR_MODE_INDIRECT
             else:
                 data.opType = ADDR_MODE_NONE
         if data.opType > ADDR_MODE_NONE and data.opType < ADDR_MODE_EXTENDED:
@@ -849,7 +849,7 @@ def decodeIndexed(opnd, data):
     Returns the operand value as a string (for the convenience of the calling function, decodeOpnd()
     Retruns and empty string if there was an error of some kind
     '''
-    data.opType = ADDR_MODE_EXT_INDIRECT
+    data.opType = ADDR_MODE_INDIRECT
     opndValue = 0
     a = -1
     parts = opnd.split(',')
@@ -1099,7 +1099,6 @@ def disassembleFile(path):
     global code
     global startAddress
 
-    return
     data = None
     fileExists = os.path.exists(path)
     if fileExists is True:
@@ -1109,63 +1108,125 @@ def disassembleFile(path):
         print("No file")
 
     if data is not None:
-        op = json.loads(data)
-        code = op["code"]
-        startAddress = op["address"]
+        filedata = json.loads(data)
+        code = filedata["code"]
+        startAddress = filedata["address"]
         
         count = startAddress
-        bytecount = 0
-        gotop = False
+        opBytes = 0
+        opnd = 0
+        gotOp = False
+        preOpByte = 0
+        addressing = 0
         linestring = ""
 
-        for bytestring in code:
-            byte = Int(bytestring)
+        for i in range(0, len(code)):
+            byte = ord(code[i])
             
-            
-            found = False
-            theop = ""
-            theopcode = -1
-            themode = -1
+            if preOpByte != 0:
+                byte = (preOpByte << 8) + byte
+                preOpByte = 0
 
-            if gotop is False:
+            found = False
+            op = ""
+            opCode = -1
+
+            if gotOp is False:
                 # Look for an op
-                for anop in isa:
-                    for i in range(1, 5):
-                        if anop[i] == byte:
+                if byte == 0x10 or byte == 0x11:
+                    preOpByte = byte
+                    continue
+                
+                for j in range(0, len(ISA), 6):
+                    for k in range(j + 1, j + 6):
+                        if ISA[k] == byte:
                             found = True
-                            theop = anop[0]
-                            themode = i
+                            op = ISA[j]
+                            addressing = k - j
+                            #print("OP: " + op + " mode: " + str(addressing))
                             break
                     if found is True:
                         break
+                
+                if found is False:
+                    for j in range(0, len(BSA), 3):
+                        for k in range(j + 1, j + 3):
+                            if BSA[k] == byte:
+                                found = True
+                                op = BSA[j]
+                                if k - j == 2:
+                                    op = "L" + op
+                                addressing = k - j + 10
+                                break
+                        if found is True:
+                            break
             else:
                 found = True
-                theop = byte
+                op = byte
             
             if found is False:
-                print("Bad Op!")
+                print("Bad Op: " + "{0:02X}".format(byte))
+                break
             else:
-                if gotop is False:
-                    linestring = linestring + str(count) + "   " + theop
-                    if i == 5:
-                        # Inherent addressing, so no operand
+                if gotOp is False:
+                    linestring = linestring + "0x{0:04X}".format(count) + "    " + op + "    "
+                    if addressing == ADDR_MODE_INHERENT:
+                        # Inherent addressing, so no operand, ie. just dump the line
                         print(linestring)
                         linestring = ""
                         count = count + 1
-                    elif i == 1:
+                    elif addressing == ADDR_MODE_IMMEDIATE:
                         # Immediate addressing
-                        linestring = linestring + " #"
-                        gotop = True
-                        bytecount = bytecount + 1
+                        linestring = linestring + "#"
+                        gotOp = True
+                        if op[-1:] == "A" or op[-1:] == "B" or op[-2:] == "PC" or op[-2:] == "CC":
+                            opBytes = 1
+                        else:
+                            opBytes = 2
+                        count = count + 1
+                    elif addressing == ADDR_MODE_DIRECT:
+                        # Direct addressing
+                        linestring = linestring + ">"
+                        gotOp = True
+                        opBytes = 1
+                        count = count + 1
+                    elif addressing == ADDR_MODE_INDIRECT:
+                        gotOp = True
+                        count = count + 1
+                    elif addressing == ADDR_MODE_EXTENDED:
+                        gotOp = True
+                        count = count + 1
+                    elif addressing > 10:
+                        if addressing - 10 == BRANCH_MODE_SHORT:
+                            gotOp = True
+                            count = count + 1
+                            opBytes = 1
+                        elif addressing - 10 == BRANCH_MODE_LONG:
+                            gotOp = True
+                            count = count + 1
+                            opBytes = 2
                 else:
-                    linestring = linestring + str(byte)
-                    bytecount = bytecount - 1
+                    if addressing - 10 == BRANCH_MODE_SHORT:
+                        # 'byte' is the 8-bit offset
+                        target = 0
+                        if byte & 0x80 == 0x80:
+                            # Sign bit set
+                            target = count - (256 - byte) - 1
+                        else:
+                            target = count + byte + 1
+                        linestring = linestring + "${0:04X}".format(target)
+                    else:
+                        opnd = opnd
+                        linestring = linestring + "{0:02X}".format(byte)
+                    
+                    opBytes = opBytes - 1
+                    count = count + 1
 
-                    if bytecount == 0:
+                    if opBytes == 0:
                         print(linestring)
                         linestring = ""
-                        count = count + 1
-                        gotop = False
+                        gotOp = False
+                        opnd = 0
             
     
 
@@ -1234,10 +1295,9 @@ def getFiles():
     acount = 0
     dcount = 0
     for file in files:
-        ext = file[-3:]
-        if ext == 'asm':
+        if file[-3:] == "asm":
             acount = acount + 1
-        if ext == '809':
+        if exfile[-4:] == "6809":
             dcount = dcount + 1
 
     if acount == 1:
@@ -1260,12 +1320,17 @@ def getFiles():
         if verbose is True:
             print("No suitable .6809 files found in " + pwd)
 
-    for file in files:
-        ext = file[-3:]
-        if ext == 'asm':
-            processFile(file)
-        if ext == '809':
-            disassembleFile(file)
+    handleFiles(files)
+
+
+def handleFiles(files):
+    
+    if len(files) > 0:
+        for file in files:
+            if file[-3:] == "asm":
+                processFile(file)
+            if file[-4:] == "6809":
+                disassembleFile(file)
 
 
 if __name__ == '__main__':
@@ -1324,20 +1389,17 @@ if __name__ == '__main__':
             else:
                 if index != 0:
                     # Handle any included .asm files
-                    ext = item[-3:]
-                    if ext == "asm":
+                    if item[-3:] == "asm" or item[-4:] == "6809":
                         argsFlag = True
                         files.append(item)
                     else:
-                        print(item + " is not a .asm file - ignoring")
+                        print(item + " is not a .asm or .6809 file - ignoring")
         if argsFlag is False:
             # By default get all the .asm files in the working directory
             getFiles()
         else:
             # Process any named files
-            if len(files) > 0:
-                for file in files:
-                    processFile(file)
+            handleFiles(files)
     else:
         # By default get all the .asm files in the working directory
         getFiles()
