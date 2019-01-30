@@ -1339,10 +1339,13 @@ if __name__ == '__main__':
     '''
     # Do we have any arguments?
     if len(sys.argv) > 1:
-        argsFlag = False
+        filesFlag = False
+        argFlag = False
         files = []
         for index, item in enumerate(sys.argv):
-            if item == "-v" or item == "--verbose":
+            if argFlag is True:
+                argFlag = False
+            elif item == "-v" or item == "--verbose":
                 # Handle the -v / --verbose switch
                 verbose = True
             elif item == "-q" or item == "--quiet":
@@ -1360,20 +1363,17 @@ if __name__ == '__main__':
                     print("Error: -s / --startaddress must be followed by an address")
                     sys.exit(0)
                 address = sys.argv[index + 1]
+                base = 10
                 if address[:2] == "0x" or address[:1] == "$":
-                    try:
-                        startAddress = int(sys.argv[index + 1], 16)
-                    except err:
-                        print("Error: -s / --startAddress must be followed by an address")
-                        sys.exit(0)
-                else:
-                    try:
-                        startAddress = int(sys.argv[index + 1])
-                    except err:
-                        print("Error: -s / --startAddress must be followed by an address")
-                        sys.exit(0)
+                    base = 16
+                try:
+                    startAddress = int(sys.argv[index + 1], base)
+                except err:
+                    print("Error: -s / --startAddress must be followed by an address")
+                    sys.exit(0)
                 if verbose is True:
                     print("Code start address set to 0x{0:04X}".format(startAddress))
+                argFlag = True
             elif item == "-h" or item == "--help":
                 # Handle the -h / --help switch
                 showHelp()
@@ -1386,15 +1386,16 @@ if __name__ == '__main__':
                 parts = outFile.split(".")
                 if parts == 1:
                     outFile = outFile + ".6809"
+                argFlag = True
             else:
-                if index != 0:
+                if index != 0 and argFlag is False:
                     # Handle any included .asm files
                     if item[-3:] == "asm" or item[-4:] == "6809":
-                        argsFlag = True
                         files.append(item)
                     else:
                         print(item + " is not a .asm or .6809 file - ignoring")
-        if argsFlag is False:
+        
+        if len(files) == 0:
             # By default get all the .asm files in the working directory
             getFiles()
         else:
