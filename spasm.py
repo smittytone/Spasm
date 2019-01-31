@@ -212,6 +212,8 @@ class DecodeData:
     pseudoOpType = 0
     lineNumber = 0
     commentTab = 0
+    op = []
+    opndValue = -1
 
 
 ##########################################################################
@@ -258,6 +260,7 @@ def processFile(path):
         if verbose is True:
             print("****** ASSEMBLY PASS #" + str(p) + " ******")
         for i in range (0, len(lines)):
+            # Parse the lines one at a time
             result = parseLine(lines[i], i)
             if result is False:
                 # Error in processing
@@ -267,7 +270,7 @@ def processFile(path):
                 break
         if breakFlag is True:
             # Break out of the pass-by-pass loop
-                break
+            break
 
     # Post-assembly, dump the machine code, provided there was no error
     if verbose is True and breakFlag is False:
@@ -302,9 +305,9 @@ def parseLine(line, lineNumber):
 
     # Split the line at the line terminator
     lineParts = line.splitlines()
-
-    # Check for comment lines
     line = lineParts[0]
+    
+    # Check for comment lines
     comment = ""
     commentTab = line.find(";")
     if commentTab != -1:
@@ -395,11 +398,12 @@ def parseLine(line, lineNumber):
         if len(op) == 0:
             errorMessage(1, lineNumber) # Bad op
             return False
+        lineData.op = op
 
     # TODO What if there's no op, or are we dealing with dangling lines?
 
     # Calculate the operand
-    opnd = decodeOpnd(lineParts[2], op, lineData)
+    opnd = decodeOpnd(lineParts[2], lineData)
     if opnd == -1:
         errorMessage(5, lineNumber) # Bad operand
         return False
@@ -478,7 +482,7 @@ def decodeOp(op, data):
     return []
 
 
-def decodeOpnd(opnd, op, data):
+def decodeOpnd(opnd, data):
     '''
     This function decodes the operand string 'opnd' to an integer, using
     the opcode data supplied as 'op'.
@@ -488,8 +492,10 @@ def decodeOpnd(opnd, op, data):
 
     opndString = ""
     opndValue = 0
+    op = data.op
     opName = ""
     data.opType = ADDR_MODE_NONE
+
 
     if len(op) > 1:
         opName = op[0]
