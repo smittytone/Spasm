@@ -36,7 +36,7 @@ ERRORS  = { "0": "No error",
 ADDR_MODE_NONE              = 0
 ADDR_MODE_IMMEDIATE         = 1
 ADDR_MODE_DIRECT            = 2
-ADDR_MODE_INDIRECT          = 3
+ADDR_MODE_INDEXED           = 3
 ADDR_MODE_EXTENDED          = 4
 ADDR_MODE_INHERENT          = 5
 ADDR_MODE_IMMEDIATE_SPECIAL = 11
@@ -289,7 +289,7 @@ def processFile(path):
             print(displayString)
 
     # Write out the machine code file
-    if outFile is not None:
+    if outFile is not None and breakFlag is False:
         writeFile(path)
 
 
@@ -396,7 +396,6 @@ def parseLine(line, lineNumber):
         op = decodeOp(lineParts[1], lineData)
         # NOTE 'op' will contain all the op's possible codes
         if len(op) == 0:
-            errorMessage(1, lineNumber) # Bad op
             return False
         lineData.op = op
 
@@ -405,21 +404,19 @@ def parseLine(line, lineNumber):
     # Calculate the operand
     opnd = decodeOpnd(lineParts[2], lineData)
     if opnd == -1:
-        errorMessage(5, lineNumber) # Bad operand
         return False
-
-    result = True
     
     # Handle a a pseudo-op (assembler directive) if we have one
+    result = True
     if lineData.pseudoOpType > 0:
         # We have a pseudo-op
         result = processPseudoOp(lineParts, opnd, lineParts[0], lineData)
     else:
+        # We have a regular op
         result = writeCode(lineParts, op, opnd, lineData)
     if result is False:
         errorMessage(6, lineNumber) # Bad decode
         return False
-
     return result
 
 
@@ -479,6 +476,7 @@ def decodeOp(op, data):
             return [BSA[i], BSA[i + 1], BSA[i + 2], -1, -1, -1]
 
     # No instruction found: that's an error - this will be picked up in parseLine()
+    errorMessage(1, data.lineNumber) # Bad op
     return []
 
 
@@ -512,6 +510,12 @@ def decodeOpnd(opnd, data):
             return -1
         b = regValue(parts[1])
         if b == "":
+            errorMessage(7, data.lineNumber) # Bad operand
+            return -1
+        # Check that a and b's bit lengths match: can't copy a 16-bit into an 8-bit
+        ia = int(a)
+        ib = int(b)
+        if (ia > 5 and ib < 8) or (ia < 8 and ib > 5):
             errorMessage(7, data.lineNumber) # Bad operand
             return -1
         opndString = "0x" + a + b
@@ -578,7 +582,7 @@ def decodeOpnd(opnd, data):
 
     if len(opndString) > 0 and opndString[0] == "(":
         # Extended indirect addressing
-        data.opType = ADDR_MODE_INDIRECT
+        data.opType = ADDR_MODE_INDEXED
         opndString = opndString[1:-1]
         opndValue = 0x9F
         data.indexAddress = getValue(opndString)
@@ -718,7 +722,7 @@ def writeCode(lineParts, op, opnd, data):
                     data.opType = ADDR_MODE_EXTENDED
                 elif opnd > 127 or opnd < -128:
                     # Do 16-bit address
-                    data.opType = ADDR_MODE_INDIRECT
+                    data.opType = ADDR_MODE_INDEXED
             else:
                 data.opType = ADDR_MODE_NONE
         if data.opType > ADDR_MODE_NONE and data.opType < ADDR_MODE_EXTENDED:
@@ -865,7 +869,7 @@ def decodeIndexed(opnd, data):
     Returns the operand value as a string (for the convenience of the calling function, decodeOpnd()
     Retruns and empty string if there was an error of some kind
     '''
-    data.opType = ADDR_MODE_INDIRECT
+    data.opType = ADDR_MODE_INDEXED
     opndValue = 0
     a = -1
     parts = opnd.split(',')
@@ -1131,15 +1135,16 @@ def disassembleFile(path):
         count = startAddress
         opBytes = 0
         opnd = 0
-        gotOp = False
         special = 0
         preOpByte = 0
-        addressing = 0
+        addressMode = 0
         linestring = ""
-        cd = ""
+        byteString = ""
+        gotOp = False
 
         # Run through the machine code byte by byte
         for i in range(0, len(code)):
+            # Get the current byte
             byte = ord(code[i])
             
             # Combine the current byte with the previous one, if that
@@ -1158,7 +1163,6 @@ def disassembleFile(path):
                     # Extended ISA indicator found, so hold for combination
                     # with the next loaded byte of code
                     preOpByte = byte
-                    #cd = "{0:02X}".format(byte)
                     continue
                 
                 # Run through the main ISA to find the op
@@ -1167,9 +1171,9 @@ def disassembleFile(path):
                     for k in range(j + 1, j + 6):
                         if ISA[k] == byte:
                             # Got it
-                            found = True
                             op = ISA[j]
-                            addressing = k - j
+                            addressMode = k - j
+                            found = True
                             break
                     if found is True:
                         break
@@ -1181,11 +1185,12 @@ def disassembleFile(path):
                         for k in range(j + 1, j + 3):
                             if BSA[k] == byte:
                                 # Got it
-                                found = True
                                 op = BSA[j]
+                                # Correct the name of an extended branch op
                                 if k - j == 2:
                                     op = "L" + op
-                                addressing = k - j + 10
+                                addressMode = k - j + 10
+                                found = True
                                 break
                         if found is True:
                             break
@@ -1196,27 +1201,32 @@ def disassembleFile(path):
                     count = count + 1
                     break
                 
-                cd = cd + "{0:02X}".format(byte)
+                # Add the op's value to the machine code output string
+                byteString = byteString + "{0:02X}".format(byte)
 
             # Print or process the line
             if gotOp is False:
                 # Set the initial part of the output line
                 linestring = "0x{0:04X}".format(count) + "    " + op + "   "
+                
+                # Add a space for three-character opcodes
                 if len(op) == 3:
                     linestring = linestring + " "
 
                 # Gather the operand bytes (if any) according to addressing mode
                 if addressing == ADDR_MODE_INHERENT:
-                    # Inherent addressing, so no operand, ie. just dump the line
-                    sp = setSpacer(linestring)
-                    print(linestring + sp + cd)
+                    # Inherent addressing, so no operand: just dump the line
+                    print(linestring + setSpacer(linestring) + byteString)
                     count = count + 1
-                    cd = ""
+                    byteString = ""
                 elif addressing == ADDR_MODE_IMMEDIATE:
                     # Immediate addressing
                     opBytes = 1
+                    gotOp = True
+                    count = count + 1
 
-                    # Does postbyte have a special value?
+                    # Does the immediate postbyte have a special value?
+                    # It will for PSH/PUL and TFR/EXG ops
                     if op[:1] == "P":
                         if op[-1:] == "S":
                             special = 1
@@ -1227,36 +1237,35 @@ def disassembleFile(path):
                     else: 
                         linestring = linestring + "#"
                         # Set the number of operand bytes to gather to the byte-size of the 
-                        # named register (eg. one byte for 8-bit A, two bytes for 16-bit X
+                        # named register (eg. two bytes for 16-bit registers
                         if op[-1:] == "X" or op[-1:] == "Y" or op[-1:] == "D" or op[-1:] == "S" or op[-1:] == "U" or op[-2:] == "PC":
                             opBytes = 2
-                    
-                    gotOp = True
-                    count = count + 1
                 elif addressing == ADDR_MODE_DIRECT:
                     # Direct addressing
                     linestring = linestring + ">"
                     gotOp = True
                     opBytes = 1
                     count = count + 1
-                elif addressing == ADDR_MODE_INDIRECT:
+                elif addressing == ADDR_MODE_INDEXED:
+                    # Indexed addressing TODO
                     gotOp = True
                     count = count + 1
                 elif addressing == ADDR_MODE_EXTENDED:
+                    # Extended addressing TODO
                     gotOp = True
                     count = count + 1
                 elif addressing > 10:
-                    if addressing - 10 == BRANCH_MODE_SHORT:
-                        gotOp = True
-                        count = count + 1
-                        opBytes = 1
-                    elif addressing - 10 == BRANCH_MODE_LONG:
-                        gotOp = True
-                        count = count + 1
+                    # Handle ranch operation offset bytes
+                    gotOp = True
+                    count = count + 1
+                    opBytes = 1
+                    
+                    # Is the branch and extended one?
+                    if addressing - 10 == BRANCH_MODE_LONG:
                         opBytes = 2
             else:
                 # We are handling the operand bytes having found the op
-                cd = cd + "{0:02X}".format(byte)
+                byteString = byteString + "{0:02X}".format(byte)
                 if addressing - 10 == BRANCH_MODE_SHORT:
                     # 'byte' is the 8-bit offset
                     target = 0
@@ -1269,13 +1278,13 @@ def disassembleFile(path):
                 elif addressing == ADDR_MODE_IMMEDIATE and special > 0:
                     if special == 1:
                         # PSHS/PULS
-                        linestring = linestring + setPushS(byte)
+                        linestring = linestring + disPushS(byte)
                     elif special == 2:
                         # PSHU/PULU
-                        linestring = linestring + setPushU(byte)
+                        linestring = linestring + disPushU(byte)
                     else:
                         # TFR/EXG
-                        linestring = linestring + setTransfer(byte)
+                        linestring = linestring + disTransfer(byte)
                     special = 0
                 else:
                     if opBytes > 0:
@@ -1288,21 +1297,31 @@ def disassembleFile(path):
                 if opBytes == 0:
                     # We've got all the operand bytes we need, so output the line
                     sp = setSpacer(linestring)
-                    print(linestring + sp + cd)
+                    print(linestring + sp + byteString)
                     gotOp = False
                     opnd = 0
-                    cd = ""
+                    byteString = ""
 
 
-def setSpacer(ls):
-    s = 26 - len(ls)
+def setSpacer(l, c):
+    '''
+    Return an appropriate number of spaces for the output
+    Parameter: 'l' is the input line
+    '''
+    s = 26 - len(l)
     if s < 1:
+        # If the line is too long, just return a couple of spaces
         return "  "
-    return "           "[:(26 - len(ls))]
+    # Return a space string of suitable length
+    return "               "[:s]
 
 
-def setTransfer(b):
-    rs = ["D", "X", "Y", "U", "S", "PC", "A", "B", "CC", "DP"]
+def disTransfer(b):
+    '''
+    Generic TFR/EXG operand string generator
+    Parameter: 'b' is the byte value
+    '''
+    r = ["D", "X", "Y", "U", "S", "PC", "A", "B", "CC", "DP"]
     ss = ""
     ds = ""
 
@@ -1310,33 +1329,50 @@ def setTransfer(b):
     d = b & 0x0F
 
     if s > 5:
-        ss = rs[s - 2]
+        ss = r[s - 2]
     else:
-        ss = rs[s]
+        ss = r[s]
 
     if d > 5:
-        ds = rs[d - 2]
+        ds = r[d - 2]
     else:
-        ds = rs[d]
+        ds = r[d]
 
+    # Return the operating string, eg. "A,B"
     return ss + "," + ds
 
 
-def setPushS(b):
-    return setPush(b, ["CC", "A", "B", "DP", "X", "Y", "U", "PC"])
+def disPushS(b):
+    '''
+    Pass on the correct register lists for PSHS or PULS
+    Parameter: 'b' is the byte value
+    '''
+    return disPush(b, ["CC", "A", "B", "DP", "X", "Y", "U", "PC"])
 
 
-def setPushU(b):
-    return setPush(b, ["CC", "A", "B", "DP", "X", "Y", "S", "PC"])
+def disPushU(b):
+    '''
+    Pass on the correct register lists for PSHU or PULU
+    Parameter: 'b' is the byte value
+    '''
+    return disPush(b, ["CC", "A", "B", "DP", "X", "Y", "S", "PC"])
 
 
-def setPush(b, rs):
-    ss = ""
+def disPush(b, r):
+    '''
+    Generic PUL/PSH operand string generator
+    Parameters: 'b' is the byte value, 'r' the array of register names
+    '''
+    os = ""
     for i in range (0, 8):
         if b & (2 ** i) > 0:
-            ss = ss + rs[i] + ","
-    ss = ss[0:len(ss)-1]
-    return ss
+            # Bit is set, so add the register to the output string, 'os'
+            os = os + r[i] + ","
+    # Remove the final comma
+    if len(os) > 0:
+        os = os[0:len(os)-1]
+    # Return the output string, eg. "CC,A,X,Y,PC"
+    return os
 
 
 def showHelp():
