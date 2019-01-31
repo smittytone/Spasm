@@ -33,14 +33,15 @@ ERRORS  = { "0": "No error",
             "7": "Bad TFR/EXG operand",
             "8": "Bad PUL/PSH operand",
             "9": "Bad address" }
-ADDR_MODE_NONE         = 0
-ADDR_MODE_IMMEDIATE    = 1
-ADDR_MODE_DIRECT       = 2
-ADDR_MODE_INDIRECT     = 3
-ADDR_MODE_EXTENDED     = 4
-ADDR_MODE_INHERENT     = 5
-BRANCH_MODE_SHORT      = 1
-BRANCH_MODE_LONG       = 2
+ADDR_MODE_NONE              = 0
+ADDR_MODE_IMMEDIATE         = 1
+ADDR_MODE_DIRECT            = 2
+ADDR_MODE_INDIRECT          = 3
+ADDR_MODE_EXTENDED          = 4
+ADDR_MODE_INHERENT          = 5
+ADDR_MODE_IMMEDIATE_SPECIAL = 11
+BRANCH_MODE_SHORT           = 1
+BRANCH_MODE_LONG            = 2
 
 ##########################################################################
 # The main 6809 instruction set in the form: mnemonic plus               #
@@ -508,8 +509,8 @@ def decodeOpnd(opnd, op, data):
             errorMessage(7, data.lineNumber) # Bad operand
             return -1
         opndString = "0x" + a + b
-        # Set Immediate Addressing
-        data.opType = ADDR_MODE_IMMEDIATE
+        # Set Immediate Addressing Special
+        data.opType = ADDR_MODE_IMMEDIATE_SPECIAL
     elif opName[0:3] == "PUL" or opName[0:3] == "PSH":
         # Push or pull operation to calculate the special operand value
         # by looking at all the named registers
@@ -536,8 +537,8 @@ def decodeOpnd(opnd, op, data):
                     return -1
                 a = a + b
         opndString = str(a)
-        # Set Immediate Addressing
-        data.opType = ADDR_MODE_IMMEDIATE
+        # Set Immediate Addressing Special
+        data.opType = ADDR_MODE_IMMEDIATE_SPECIAL
     else:
         # Calculate the operand for all other instructions
         data.indirectFlag = False
@@ -653,7 +654,10 @@ def writeCode(lineParts, op, opnd, data):
             data.opType = data.branchOpType
 
         # Get the machine code for the op
-        opValue = op[data.opType]
+        if data.opType > 10:
+            opValue = op[data.opType - 10]
+        else:
+            opValue = op[data.opType]
         
         if opValue == -1:
             errorMessage(6, data.lineNumber) # Bad opcode
@@ -687,6 +691,12 @@ def writeCode(lineParts, op, opnd, data):
             anOp = anOp[-1]
             if anOp == "D" or anOp == "X" or anOp == "Y" or anOp == "S" or anOp == "U":
                 data.opType = ADDR_MODE_EXTENDED
+        if data.opType == ADDR_MODE_IMMEDIATE_SPECIAL:
+            # Immediate addressing: TFR/EXG OR PUL/PSH
+            poke(progCount, int(opnd))
+            progCount = progCount + 1
+            if passCount == 2:
+                byteString = byteString + "{0:02X}".format(opnd)
         if data.opType == ADDR_MODE_INHERENT:
             # Inherent addressing
             data.opType = ADDR_MODE_NONE
@@ -1116,13 +1126,18 @@ def disassembleFile(path):
         opBytes = 0
         opnd = 0
         gotOp = False
+        special = 0
         preOpByte = 0
         addressing = 0
         linestring = ""
+        cd = ""
 
+        # Run through the machine code byte by byte
         for i in range(0, len(code)):
             byte = ord(code[i])
             
+            # Combine the current byte with the previous one, if that
+            # was 0x10 or 0x11 (ie. extended ISA)
             if preOpByte != 0:
                 byte = (preOpByte << 8) + byte
                 preOpByte = 0
@@ -1132,26 +1147,34 @@ def disassembleFile(path):
             opCode = -1
 
             if gotOp is False:
-                # Look for an op
+                # Look for an op first
                 if byte == 0x10 or byte == 0x11:
+                    # Extended ISA indicator found, so hold for combination
+                    # with the next loaded byte of code
                     preOpByte = byte
+                    #cd = "{0:02X}".format(byte)
                     continue
                 
+                # Run through the main ISA to find the op
                 for j in range(0, len(ISA), 6):
+                    # Run through each op's possible op codes to find a match
                     for k in range(j + 1, j + 6):
                         if ISA[k] == byte:
+                            # Got it
                             found = True
                             op = ISA[j]
                             addressing = k - j
-                            #print("OP: " + op + " mode: " + str(addressing))
                             break
                     if found is True:
                         break
                 
                 if found is False:
+                    # Didn't match the byte in the main ISA, so check for a branch op
                     for j in range(0, len(BSA), 3):
+                        # Run through each op's possible op codes to find a match
                         for k in range(j + 1, j + 3):
                             if BSA[k] == byte:
+                                # Got it
                                 found = True
                                 op = BSA[j]
                                 if k - j == 2:
@@ -1160,75 +1183,154 @@ def disassembleFile(path):
                                 break
                         if found is True:
                             break
-            else:
-                found = True
-                op = byte
-            
-            if found is False:
-                print("Bad Op: " + "{0:02X}".format(byte))
-                break
-            else:
-                if gotOp is False:
-                    linestring = linestring + "0x{0:04X}".format(count) + "    " + op + "    "
-                    if addressing == ADDR_MODE_INHERENT:
-                        # Inherent addressing, so no operand, ie. just dump the line
-                        print(linestring)
-                        linestring = ""
-                        count = count + 1
-                    elif addressing == ADDR_MODE_IMMEDIATE:
-                        # Immediate addressing
-                        linestring = linestring + "#"
-                        gotOp = True
-                        if op[-1:] == "A" or op[-1:] == "B" or op[-2:] == "PC" or op[-2:] == "CC":
-                            opBytes = 1
-                        else:
-                            opBytes = 2
-                        count = count + 1
-                    elif addressing == ADDR_MODE_DIRECT:
-                        # Direct addressing
-                        linestring = linestring + ">"
-                        gotOp = True
-                        opBytes = 1
-                        count = count + 1
-                    elif addressing == ADDR_MODE_INDIRECT:
-                        gotOp = True
-                        count = count + 1
-                    elif addressing == ADDR_MODE_EXTENDED:
-                        gotOp = True
-                        count = count + 1
-                    elif addressing > 10:
-                        if addressing - 10 == BRANCH_MODE_SHORT:
-                            gotOp = True
-                            count = count + 1
-                            opBytes = 1
-                        elif addressing - 10 == BRANCH_MODE_LONG:
-                            gotOp = True
-                            count = count + 1
-                            opBytes = 2
-                else:
-                    if addressing - 10 == BRANCH_MODE_SHORT:
-                        # 'byte' is the 8-bit offset
-                        target = 0
-                        if byte & 0x80 == 0x80:
-                            # Sign bit set
-                            target = count - (256 - byte) - 1
-                        else:
-                            target = count + byte + 1
-                        linestring = linestring + "${0:04X}".format(target)
-                    else:
-                        opnd = opnd
-                        linestring = linestring + "{0:02X}".format(byte)
-                    
-                    opBytes = opBytes - 1
+                
+                # If we still haven't matched the op, print a warning 
+                if found is False:
+                    print("Bad Op: " + "{0:02X}".format(byte))
                     count = count + 1
+                    break
+                
+                cd = cd + "{0:02X}".format(byte)
 
-                    if opBytes == 0:
-                        print(linestring)
-                        linestring = ""
-                        gotOp = False
-                        opnd = 0
-            
-    
+            # Print or process the line
+            if gotOp is False:
+                # Set the initial part of the output line
+                linestring = "0x{0:04X}".format(count) + "    " + op + "   "
+                if len(op) == 3:
+                    linestring = linestring + " "
+
+                # Gather the operand bytes (if any) according to addressing mode
+                if addressing == ADDR_MODE_INHERENT:
+                    # Inherent addressing, so no operand, ie. just dump the line
+                    sp = setSpacer(linestring)
+                    print(linestring + sp + cd)
+                    count = count + 1
+                    cd = ""
+                elif addressing == ADDR_MODE_IMMEDIATE:
+                    # Immediate addressing
+                    opBytes = 1
+
+                    # Does postbyte have a special value?
+                    if op[:1] == "P":
+                        if op[-1:] == "S":
+                            special = 1
+                        else:
+                            special = 2
+                    elif op == "TFR" or op == "EXG":
+                        special = 3
+                    else: 
+                        linestring = linestring + "#"
+                        # Set the number of operand bytes to gather to the byte-size of the 
+                        # named register (eg. one byte for 8-bit A, two bytes for 16-bit X
+                        if op[-1:] == "X" or op[-1:] == "Y" or op[-1:] == "D" or op[-1:] == "S" or op[-1:] == "U" or op[-2:] == "PC":
+                            opBytes = 2
+                    
+                    gotOp = True
+                    count = count + 1
+                elif addressing == ADDR_MODE_DIRECT:
+                    # Direct addressing
+                    linestring = linestring + ">"
+                    gotOp = True
+                    opBytes = 1
+                    count = count + 1
+                elif addressing == ADDR_MODE_INDIRECT:
+                    gotOp = True
+                    count = count + 1
+                elif addressing == ADDR_MODE_EXTENDED:
+                    gotOp = True
+                    count = count + 1
+                elif addressing > 10:
+                    if addressing - 10 == BRANCH_MODE_SHORT:
+                        gotOp = True
+                        count = count + 1
+                        opBytes = 1
+                    elif addressing - 10 == BRANCH_MODE_LONG:
+                        gotOp = True
+                        count = count + 1
+                        opBytes = 2
+            else:
+                # We are handling the operand bytes having found the op
+                cd = cd + "{0:02X}".format(byte)
+                if addressing - 10 == BRANCH_MODE_SHORT:
+                    # 'byte' is the 8-bit offset
+                    target = 0
+                    if byte & 0x80 == 0x80:
+                        # Sign bit set
+                        target = count + 1 - (255 - byte)
+                    else:
+                        target = count + 1 + byte
+                    linestring = linestring + "${0:04X}".format(target)
+                elif addressing == ADDR_MODE_IMMEDIATE and special > 0:
+                    if special == 1:
+                        # PSHS/PULS
+                        linestring = linestring + setPushS(byte)
+                    elif special == 2:
+                        # PSHU/PULU
+                        linestring = linestring + setPushU(byte)
+                    else:
+                        # TFR/EXG
+                        linestring = linestring + setTransfer(byte)
+                    special = 0
+                else:
+                    if opBytes > 0:
+                        opnd = opnd + (byte << (8 * (opBytes - 1)))
+                    linestring = linestring + "{0:02X}".format(byte)
+                
+                opBytes = opBytes - 1
+                count = count + 1
+
+                if opBytes == 0:
+                    # We've got all the operand bytes we need, so output the line
+                    sp = setSpacer(linestring)
+                    print(linestring + sp + cd)
+                    gotOp = False
+                    opnd = 0
+                    cd = ""
+
+
+def setSpacer(ls):
+    s = 26 - len(ls)
+    if s < 1:
+        return "  "
+    return "           "[:(26 - len(ls))]
+
+
+def setTransfer(b):
+    rs = ["D", "X", "Y", "U", "S", "PC", "A", "B", "CC", "DP"]
+    ss = ""
+    ds = ""
+
+    s = (b & 0xF0) >> 4
+    d = b & 0x0F
+
+    if s > 5:
+        ss = rs[s - 2]
+    else:
+        ss = rs[s]
+
+    if d > 5:
+        ds = rs[d - 2]
+    else:
+        ds = rs[d]
+
+    return ss + "," + ds
+
+
+def setPushS(b):
+    return setPush(b, ["CC", "A", "B", "DP", "X", "Y", "U", "PC"])
+
+
+def setPushU(b):
+    return setPush(b, ["CC", "A", "B", "DP", "X", "Y", "S", "PC"])
+
+
+def setPush(b, rs):
+    ss = ""
+    for i in range (0, 8):
+        if b & (2 ** i) > 0:
+            ss = ss + rs[i] + ","
+    ss = ss[0:len(ss)-1]
+    return ss
 
 
 def showHelp():
@@ -1273,15 +1375,17 @@ def writeFile(path):
     op = { "address": startAddress,
            "code": byteString }
 
-    print(op["address"])
+    #print(op["address"])
     jop = json.dumps(op, ensure_ascii=False)
-    print(jop)
+    #print(jop)
 
     pwd = os.getcwd()
     fileExists = os.path.exists(os.path.join(pwd, outFile))
 
     with open(outFile, "w") as file:
         file.write(jop)
+
+    print("File " + outFile + " written")
 
 
 def getFiles():
