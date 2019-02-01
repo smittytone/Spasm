@@ -1130,9 +1130,7 @@ def disassembleFile(path):
     if data is not None:
         filedata = json.loads(data)
         code = filedata["code"]
-        startAddress = filedata["address"]
-        
-        count = startAddress
+        address = filedata["address"]
         opBytes = 0
         opnd = 0
         special = 0
@@ -1155,7 +1153,6 @@ def disassembleFile(path):
 
             found = False
             op = ""
-            opCode = -1
 
             if gotOp is False:
                 # Look for an op first
@@ -1172,6 +1169,7 @@ def disassembleFile(path):
                         if ISA[k] == byte:
                             # Got it
                             op = ISA[j]
+                            # Value of 'k' indicates which addressing mode we have
                             addressMode = k - j
                             found = True
                             break
@@ -1198,7 +1196,8 @@ def disassembleFile(path):
                 # If we still haven't matched the op, print a warning 
                 if found is False:
                     print("Bad Op: " + "{0:02X}".format(byte))
-                    count = count + 1
+                    address = address + 1
+                    # TODO Should we just bail at this point?
                     break
                 
                 # Add the op's value to the machine code output string
@@ -1207,23 +1206,23 @@ def disassembleFile(path):
             # Print or process the line
             if gotOp is False:
                 # Set the initial part of the output line
-                linestring = "0x{0:04X}".format(count) + "    " + op + "   "
+                linestring = "0x{0:04X}".format(address) + "    " + op + "   "
                 
                 # Add a space for three-character opcodes
                 if len(op) == 3:
                     linestring = linestring + " "
 
                 # Gather the operand bytes (if any) according to addressing mode
-                if addressing == ADDR_MODE_INHERENT:
+                if addressMode == ADDR_MODE_INHERENT:
                     # Inherent addressing, so no operand: just dump the line
                     print(linestring + setSpacer(linestring) + byteString)
-                    count = count + 1
+                    address = address + 1
                     byteString = ""
-                elif addressing == ADDR_MODE_IMMEDIATE:
+                elif addressMode == ADDR_MODE_IMMEDIATE:
                     # Immediate addressing
                     opBytes = 1
                     gotOp = True
-                    count = count + 1
+                    address = address + 1
 
                     # Does the immediate postbyte have a special value?
                     # It will for PSH/PUL and TFR/EXG ops
@@ -1240,42 +1239,55 @@ def disassembleFile(path):
                         # named register (eg. two bytes for 16-bit registers
                         if op[-1:] == "X" or op[-1:] == "Y" or op[-1:] == "D" or op[-1:] == "S" or op[-1:] == "U" or op[-2:] == "PC":
                             opBytes = 2
-                elif addressing == ADDR_MODE_DIRECT:
+                elif addressMode == ADDR_MODE_DIRECT:
                     # Direct addressing
                     linestring = linestring + ">"
                     gotOp = True
                     opBytes = 1
-                    count = count + 1
-                elif addressing == ADDR_MODE_INDEXED:
+                    address = address + 1
+                elif addressMode == ADDR_MODE_INDEXED:
                     # Indexed addressing TODO
                     gotOp = True
-                    count = count + 1
-                elif addressing == ADDR_MODE_EXTENDED:
+                    address = address + 1
+                elif addressMode == ADDR_MODE_EXTENDED:
                     # Extended addressing TODO
                     gotOp = True
-                    count = count + 1
-                elif addressing > 10:
+                    address = address + 1
+                elif addressMode > 10:
                     # Handle ranch operation offset bytes
                     gotOp = True
-                    count = count + 1
+                    address = address + 1
                     opBytes = 1
                     
                     # Is the branch and extended one?
-                    if addressing - 10 == BRANCH_MODE_LONG:
+                    if addressMode - 10 == BRANCH_MODE_LONG:
                         opBytes = 2
             else:
                 # We are handling the operand bytes having found the op
                 byteString = byteString + "{0:02X}".format(byte)
-                if addressing - 10 == BRANCH_MODE_SHORT:
+                if addressMode - 10 == BRANCH_MODE_SHORT:
                     # 'byte' is the 8-bit offset
                     target = 0
                     if byte & 0x80 == 0x80:
                         # Sign bit set
-                        target = count + 1 - (255 - byte)
+                        target = address + 1 - (255 - byte)
                     else:
-                        target = count + 1 + byte
+                        target = address + 1 + byte
                     linestring = linestring + "${0:04X}".format(target)
-                elif addressing == ADDR_MODE_IMMEDIATE and special > 0:
+                elif addressMode - 10 == BRANCH_MODE_LONG:
+                    # 'byte' is part of a 16-bit offset
+                    if opBytes > 0:
+                        opnd = opnd + (byte << (8 * (opBytes - 1)))
+                    
+                    if opBytes == 1:
+                        target = 0
+                        if opnd & 0x8000 == 0x8000:
+                            # Sign bit set
+                            target = address + 1 - (65535 - opnd)
+                        else:
+                            target = address + 1 + opnd
+                        linestring = linestring + "${0:04X}".format(target)
+                elif addressMode == ADDR_MODE_IMMEDIATE and special > 0:
                     if special == 1:
                         # PSHS/PULS
                         linestring = linestring + disPushS(byte)
@@ -1291,8 +1303,10 @@ def disassembleFile(path):
                         opnd = opnd + (byte << (8 * (opBytes - 1)))
                     linestring = linestring + "{0:02X}".format(byte)
                 
+                # Decrement the number-of-operand-bytes counter,
+                # and increase the current memory address
                 opBytes = opBytes - 1
-                count = count + 1
+                address = address + 1
 
                 if opBytes == 0:
                     # We've got all the operand bytes we need, so output the line
@@ -1303,7 +1317,7 @@ def disassembleFile(path):
                     byteString = ""
 
 
-def setSpacer(l, c):
+def setSpacer(l):
     '''
     Return an appropriate number of spaces for the output
     Parameter: 'l' is the input line
@@ -1313,7 +1327,7 @@ def setSpacer(l, c):
         # If the line is too long, just return a couple of spaces
         return "  "
     # Return a space string of suitable length
-    return "               "[:s]
+    return SPACES[:s]
 
 
 def disTransfer(b):
