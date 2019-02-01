@@ -368,7 +368,7 @@ def parseLine(line, lineNumber):
                 label["addr"] = progCount
                 # Output the label valuation
                 if verbose is True:
-                    print("Label " + label["name"] + " set to " + str(progCount) + " (line " + str(lineNumber) + ")")
+                    print("Label " + label["name"] + " set to 0x" + "{0:04X}".format(progCount) + " (line " + str(lineNumber) + ")")
         else:
             # Record the newly found label
             newLabel = { "name": label, "addr": progCount }
@@ -493,7 +493,6 @@ def decodeOpnd(opnd, data):
     op = data.op
     opName = ""
     data.opType = ADDR_MODE_NONE
-
 
     if len(op) > 1:
         opName = op[0]
@@ -829,7 +828,6 @@ def getValue(numstring):
     '''
     Convert a string value to an integer value
     '''
-
     value = 0
     if numstring == "UNDEF":
         value = 0
@@ -1001,7 +999,7 @@ def processPseudoOp(lineParts, opndValue, labelName, data):
             label = labels[i]
             label["addr"] = opndValue
             if verbose is True:
-                print("Label " + labelName + " set to " + str(opndValue))
+                print("Label " + labelName + " set to 0x" + "{0:04X}".format(opndValue) + " (line " + str(data.lineNumber) + ")")
         result = writeCode(lineParts, [], 0, data)
 
     if data.pseudoOpType == 2:
@@ -1011,7 +1009,7 @@ def processPseudoOp(lineParts, opndValue, labelName, data):
         label = labels[i]
         label["addr"] = progCount
         if verbose is True and passCount == 1:
-            print(str(opndValue) + " bytes reserved at address 0x" + "{0:04X}".format(progCount))
+            print(str(opndValue) + " bytes reserved at address 0x" + "{0:04X}".format(progCount) + " (line " + str(data.lineNumber) + ")")
         for i in range(progCount, progCount + opndValue):
             poke(i, 0x12)
         result = writeCode(lineParts, [], 0, data)
@@ -1026,7 +1024,7 @@ def processPseudoOp(lineParts, opndValue, labelName, data):
         opndValue = opndValue & 0xFF
         poke(progCount, opndValue)
         if verbose is True and passCount == 1:
-            print("The byte at 0x" + "{0:04X}".format(progCount) + " set to 0x" + "{0:02X}".format(opndValue))
+            print("The byte at 0x" + "{0:04X}".format(progCount) + " set to 0x" + "{0:02X}".format(opndValue) + " (line " + str(data.lineNumber) + ")")
         result = writeCode(lineParts, [], 0, data)
         progCount = progCount + 1
 
@@ -1040,7 +1038,7 @@ def processPseudoOp(lineParts, opndValue, labelName, data):
         lsb = opndValue & 0xFF
         msb = (opndValue & 0xFF00) >> 8
         if verbose is True and passCount == 1:
-            print("The two bytes at 0x" + "{0:04X}".format(progCount) + " set to 0x" + "{0:04X}".format(opndValue))
+            print("The two bytes at 0x" + "{0:04X}".format(progCount) + " set to 0x" + "{0:04X}".format(opndValue) + " (line " + str(data.lineNumber) + ")")
         result = writeCode(lineParts, [], 0, data)
         poke(progCount, msb)
         progCount = progCount + 1
@@ -1054,9 +1052,8 @@ def processPseudoOp(lineParts, opndValue, labelName, data):
     if data.pseudoOpType == 6:
         # ORG: set or reset the origin, ie. the value of 'startAddress'
         if passCount == 1 and verbose is True:
-            print("Origin set to " + "{0:04X}".format(opndValue))
-        if passCount == 2:
-            progCount = opndValue
+            print("Origin set to " + "0x{0:04X}".format(opndValue) + " (line " + str(data.lineNumber) + ")")
+        progCount = opndValue
         result = writeCode(lineParts, [], 0, data)
     
     return result
