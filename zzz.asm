@@ -1,7 +1,10 @@
-@search     LDB #255
-            TFR X,B
-            LDY #$EE01
-            PSHS CC,A,X,Y
-            BEQ @search
-            RTS
-            
+; p7-4
+    CLRB
+    LDA >$41
+    CMPA #9
+    BHI @dn
+    LDX #@ss
+    LDB A,X
+@dn STB >$42
+    ORG $20
+@ss FCB $3F
