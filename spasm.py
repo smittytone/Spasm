@@ -513,8 +513,8 @@ def decodeOpnd(opnd, data):
             errorMessage(7, data.lineNumber) # Bad operand
             return -1
         # Check that a and b's bit lengths match: can't copy a 16-bit into an 8-bit
-        ia = int(a)
-        ib = int(b)
+        ia = int(a, 16)
+        ib = int(b, 16)
         if (ia > 5 and ib < 8) or (ia < 8 and ib > 5):
             errorMessage(7, data.lineNumber) # Bad operand
             return -1
