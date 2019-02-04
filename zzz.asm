@@ -7,4 +7,7 @@
     LDB A,X
 @dn STB >$42
     ORG $20
-@ss FCB $3F
+@ss FCB $3F,$4F,$5F,$6F
+    ORG $40
+@ds FDB $FF00,$FF01,$FF02,$FF03,$FF04
+

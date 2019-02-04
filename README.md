@@ -10,7 +10,7 @@ It was written to generate 6809 machine code for a separate processor emulation 
 
 ```json
 { "address" : <start_address_of_code>,
-  "code" : <string_of_assembled_code_bytes> }
+  "code"    : <string_of_assembled_code_bytes> }
 ```
 
 A sample file, `sample.6809`, is included with the repository.
@@ -77,9 +77,13 @@ Comments can be entered by prefixing them with a `;`. At this time, multi-line c
 - `EQU` &mdash; assign a value to a label, eg. `@label EQU 255`.
 - `END` &mdash; optional end-of-code marker.
 - `RMB` &mdash; reserve *n* memory bytes at this address, eg. `@label RMB 8 ; add 8 bytes for data storage`.
-- `FCB` &mdash; store the following 8-bit value at this address, eg. `@label FCB $FF ; poke 255 to this address`.
-- `FDB` &mdash; store the following 16-bit value at this address, eg. `@label FCB $FF00 ; poke 65280 to this address`.
-    - The 6809 expects the most-significant byte at the lowest address.
+- `FCB` &mdash; store the following 8-bit value or values at this address, eg. 
+    - `@label FCB $FF         ; poke 255 to this address`.
+    - `@label FCB $FF,$01,$02 ; poke 255, 0, 2 to sequential addresses from this`.
+- `FDB` &mdash; store the following 16-bit value or values at this address, eg. 
+    - `@label FDB $FF00       ; poke 65280 to this address`.
+    - `@label FDB $FF00,$FF01 ; poke 65280, 65281 to sequential addresses`.
+    - **Note** The 6809 expects the most-significant byte at the lowest address.
 - `ORG` &mdash; start assembling at the supplied address, eg. `@label ORG $3FFF ; continue assembling at address 16383`.
 
 ### Endianism ###
