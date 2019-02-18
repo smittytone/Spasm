@@ -608,7 +608,7 @@ def decodeOpnd(opnd, data):
                 print("Label " + opndString + " found on line " + str(data.lineNumber + 1))
             opndString = "UNDEF"
         else:
-            label = labels[f]
+            label = labels[index]
             opndString = str(label["addr"])
 
     '''
