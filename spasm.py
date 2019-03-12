@@ -282,8 +282,8 @@ def processFile(path):
             for j in range(0, 8):
                 if i + j < len(code):
                     # Add the bytes, one at a time, separated by whitespace
-                    displayString = displayString + "  {0:02X}".format(code[i + j])
-                    progCount = progCount + 1
+                    displayString += "  {0:02X}".format(code[i + j])
+                    progCount += 1
             print(displayString)
 
     # Write out the machine code file
@@ -566,7 +566,7 @@ def decodeOpnd(opnd, data):
                             break
                     if c != " ":
                         # Remove spaces
-                        opndString = opndString + c
+                        opndString += c
 
     # NOTE This statement may be redundant, and should be part of decodeIndexed() anyway
     if len(opndString) > 0 and opndString[0] == "(":
@@ -617,7 +617,7 @@ def decodeOpnd(opnd, data):
                 if data.pseudoOpType == 4: fs = "{0:04X}"
                 for i in range(0, len(parts)):
                     value = getIntValue(parts[i])
-                    bs = bs + fs.format(value)
+                    bs += fs.format(value)
                 # Preserve the byte string for later then bail
                 data.pseudoOpValue = bs
                 return 0

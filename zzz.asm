@@ -1,13 +1,23 @@
-; p7-4
-    CLRB
-    LDA >$41
-    CMPA #9
-    BHI @dn
-    LDX #@ss
-    LDB A,X
-@dn STB >$42
-    ORG $20
-@ss FCB $3F,$4F,$5F,$6F
-    ORG $40
-@ds FDB $FF00,$FF01,$FF02,$FF03,$FF04
-
+    LDX #$42
+    CLR >$40
+@ck LDA ,X
+    LSRA
+    LSRA
+    LSRA
+    LSRA
+    TFR A,B
+    ADDA >$40
+    DAA
+    STA >$40
+    TFR B,A
+    ADDA >$40
+    DAA
+    ADDA ,x+
+    DAA
+    STA >$40
+    DEC >$41
+    BNE @ck
+    ANDA #%00001111
+    STA >$40
+    SWI
+        
