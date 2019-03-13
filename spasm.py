@@ -186,7 +186,7 @@ BSA = [
 ##########################################################################
 
 verbose = True
-startAddress = 0x0000
+startAddress = 0xF000
 progCount = 0
 passCount = 0
 showupper = 0
@@ -225,13 +225,7 @@ def processFile(path):
     Assemble a single '.asm' file using a two-pass process to identify
     labels and pseudo-ops, etc.
     '''
-    global startAddress
-    global passCount
-    global progCount
-    global verbose
-    global code
-    global labels
-    global lines
+    global code, labels, lines, passCount, progCount
 
     if verbose is True:
         print("****** PROCESSING FILE  ******")
@@ -247,7 +241,7 @@ def processFile(path):
         with open(path, "r") as file:
             lines = list(file)
     else:
-        if verbose is True: print("File " + path + " does not exist, skipping")
+        vprint("File " + path + " does not exist, skipping")
         return
 
     # Do the assembly in two passes
@@ -256,7 +250,7 @@ def processFile(path):
         # Start a pass
         progCount = startAddress
         passCount = p
-        if verbose is True: print("****** ASSEMBLY PASS #" + str(p) + " ******")
+        vprint("****** ASSEMBLY PASS #" + str(p) + " ******")
         for i in range (0, len(lines)):
             # Parse the lines one at a time
             result = parseLine(lines[i], i)
@@ -298,7 +292,6 @@ def parseLine(line, lineNumber):
     KNOWN ISSUE: You cannot therefore have a space set using the Ascii indicator, '
     TODO: Some way of handling string constants
     '''
-    global labels
 
     # Split the line at the line terminator
     lineParts = line.splitlines()
@@ -363,7 +356,7 @@ def parseLine(line, lineNumber):
                 # Set the label address
                 label["addr"] = progCount
                 # Output the label valuation
-                if verbose is True: print("Label " + label["name"] + " set to 0x" + "{0:04X}".format(progCount) + " (line " + str(lineNumber) + ")")
+                vprint("Label " + label["name"] + " set to 0x" + "{0:04X}".format(progCount) + " (line " + str(lineNumber) + ")")
         else:
             # Record the newly found label
             newLabel = { "name": label, "addr": progCount }
@@ -591,7 +584,7 @@ def decodeOpnd(opnd, data):
             # Make a new label
             newLabel = { "name": opndString, "addr": "UNDEF" }
             labels.append(newLabel)
-            if verbose is True: print("Label " + opndString + " found on line " + str(data.lineNumber + 1))
+            vprint("Label " + opndString + " found on line " + str(data.lineNumber + 1))
             opndString = "UNDEF"
         else:
             label = labels[index]
@@ -803,6 +796,7 @@ def getRegValue(reg):
     Return the machine code for the specific register as used in TFR and EXG ops
     Return value is a single-character hex string
     '''
+    
     regs = ["D", "X", "Y", "U", "S", "PC", "A", "B", "CC", "DP"]
     vals = ["0", "1", "2", "3", "4", "5", "8", "9", "A", "B"]
     if reg.upper() in regs: return vals[regs.index(reg.upper())]
@@ -813,6 +807,7 @@ def getPullregValue(reg):
     '''
     Return the value for the specific register as used in PUL and PSH ops
     '''
+    
     regs = ["X", "Y", "U", "S", "PC", "A", "B", "CC", "DP", "D"]
     vals = [16, 32, 64, 64, 128, 2, 4, 1, 8, 6]
     if reg.upper() in regs: return vals[regs.index(reg.upper())]
@@ -825,6 +820,7 @@ def getIntValue(numstring):
     Parameter: 'numstring' is the known numeric string
     Returns an positive integer value
     '''
+    
     value = 0
     if numstring == "UNDEF":
         value = 0 # NOTE should this be -1 to signal error?
@@ -850,6 +846,7 @@ def decodeBinary(value):
     '''
     Decode the supplied binary value (as a string, eg. '0010010') to an integer
     '''
+    
     a = 0
     for i in range(0, len(value)):
         b = len(value) - i - 1
@@ -864,6 +861,7 @@ def decodeIndexed(opnd, data):
     Returns the operand value as a string (for the convenience of the calling function, decodeOpnd()
     Returns an empty string if there was an error
     '''
+    
     data.opType = ADDR_MODE_INDEXED
     opndValue = 0
     byte = -1
@@ -990,7 +988,7 @@ def processPseudoOp(lineParts, opndValue, labelName, data):
             i = haveGotLabel(labelName)
             label = labels[i]
             label["addr"] = opndValue
-            if verbose is True: print("Label " + labelName + " set to 0x" + "{0:04X}".format(opndValue) + " (line " + str(data.lineNumber) + ")")
+            vprint("Label " + labelName + " set to 0x" + "{0:04X}".format(opndValue) + " (line " + str(data.lineNumber) + ")")
         result = writeCode(lineParts, [], 0, data)
 
     if data.pseudoOpType == 2:
@@ -1112,8 +1110,6 @@ def poke(address, value):
     '''
     Build up the machine code storage as we poke in new byte values
     '''
-    global startAddress
-    global code
 
     if address - startAddress > len(code) - 1:
         a = address - startAddress - len(code)
@@ -1143,9 +1139,19 @@ def errorMessage(errCode, errLine):
     print("    " + lines[errLine])
 
 
+def vprint(message):
+    '''
+    Display a message if verbose mode is enabled
+    '''
+
+    if verbose is True: print(message)
+
+
 def disassembleFile(path):
+    '''
+    Disassemble the .6809 file at 'path'
+    '''
     global code
-    global startAddress
 
     data = None
     fileExists = os.path.exists(path)
@@ -1340,6 +1346,7 @@ def setSpacer(l):
     Return an appropriate number of spaces for the output
     Parameter: 'l' is the input line
     '''
+
     s = 26 - len(l)
     if s < 1:
         # If the line is too long, just return a couple of spaces
@@ -1353,13 +1360,10 @@ def disTransfer(b):
     Generic TFR/EXG operand string generator
     Parameter: 'b' is the byte value
     '''
-    r = ["D", "X", "Y", "U", "S", "PC", "A", "B", "CC", "DP"]
-    ss = ""
-    ds = ""
 
+    r = ["D", "X", "Y", "U", "S", "PC", "A", "B", "CC", "DP"]
     s = (b & 0xF0) >> 4
     d = b & 0x0F
-
     ss = r[s - 2] if s > 5 else r[s]
     ds = r[d - 2] if d > 5 else r[d]
 
@@ -1372,6 +1376,7 @@ def disPushS(b):
     Pass on the correct register lists for PSHS or PULS
     Parameter: 'b' is the byte value
     '''
+    
     return disPush(b, ["CC", "A", "B", "DP", "X", "Y", "U", "PC"])
 
 
@@ -1380,6 +1385,7 @@ def disPushU(b):
     Pass on the correct register lists for PSHU or PULU
     Parameter: 'b' is the byte value
     '''
+    
     return disPush(b, ["CC", "A", "B", "DP", "X", "Y", "S", "PC"])
 
 
@@ -1388,11 +1394,12 @@ def disPush(b, r):
     Generic PUL/PSH operand string generator
     Parameters: 'b' is the byte value, 'r' the array of register names
     '''
+    
     os = ""
     for i in range (0, 8):
         if b & (2 ** i) > 0:
             # Bit is set, so add the register to the output string, 'os'
-            os = os + r[i] + ","
+            os += (r[i] + ",")
     # Remove the final comma
     if len(os) > 0: os = os[0:len(os)-1]
     # Return the output string, eg. "CC,A,X,Y,PC"
@@ -1403,6 +1410,7 @@ def showHelp():
     '''
     Display Dasm's help information
     '''
+    
     print(" ")
     print("DASM is an assembler/disassembler for the 8-bit Motorola 6809 chip family.")
     print("Place one or more '*.asm' files in this directory and just call the tool,")
@@ -1428,10 +1436,6 @@ def writeFile(path):
     '''
     Write the assembled bytes, if any, to a .6809 file
     '''
-    
-    global code
-    global startAddress
-    global outFile
 
     # Build the dictionary
     byteString = ""
@@ -1454,6 +1458,7 @@ def getFiles():
     '''
     Determine all the '.asm' files in the script's directory, and process them one by one
     '''
+    
     pwd = os.getcwd()
     files = [file for file in os.listdir(pwd) if os.path.isfile(os.path.join(pwd, file))]
 
@@ -1465,18 +1470,18 @@ def getFiles():
         if file[-4:] == "6809": dcount += 1
 
     if acount == 1:
-        if verbose is True: print("Processing 1 .asm file in " + pwd)
+        vprint("Processing 1 .asm file in " + pwd)
     elif acount > 1:
-        if verbose is True: print("Processing " + str(acount) + " .asm files in " + pwd)
+        vprint("Processing " + str(acount) + " .asm files in " + pwd)
     else:
-        if verbose is True: print("No suitable .asm files found in " + pwd)
+        vprint("No suitable .asm files found in " + pwd)
 
     if dcount == 1:
-        if verbose is True: print("Processing 1 .6809 file in " + pwd)
+        vprint("Processing 1 .6809 file in " + pwd)
     elif dcount > 1:
-        if verbose is True: print("Processing " + str(dcount) + " .6809 files in " + pwd)
+        print("Processing " + str(dcount) + " .6809 files in " + pwd)
     else:
-        if verbose is True: print("No suitable .6809 files found in " + pwd)
+        vprint("No suitable .6809 files found in " + pwd)
 
     handleFiles(files)
 
@@ -1485,6 +1490,7 @@ def handleFiles(files):
     '''
     PASS all '.asm' files on for assembly, '.6809' files on for disassembly
     '''
+    
     if len(files) > 0:
         for file in files:
             if file[-3:] == "asm": processFile(file)
@@ -1495,6 +1501,7 @@ if __name__ == '__main__':
     '''
     The tool's entry point
     '''
+
     # Do we have any arguments?
     if len(sys.argv) > 1:
         filesFlag = False
@@ -1522,13 +1529,14 @@ if __name__ == '__main__':
                     sys.exit(0)
                 address = sys.argv[index + 1]
                 base = 10
-                if address[:2] == "0x" or address[:1] == "$": base = 16
+                if address[:1] == "$": address = "0x" + address[1:]
+                if address[:2] == "0x": base = 16
                 try:
-                    startAddress = int(sys.argv[index + 1], base)
+                    startAddress = int(address, base)
                 except err:
                     print("Error: -s / --startAddress must be followed by an address")
                     sys.exit(0)
-                if verbose is True: print("Code start address set to 0x{0:04X}".format(startAddress))
+                vprint("Code start address set to 0x{0:04X}".format(startAddress))
                 argFlag = True
             elif item == "-h" or item == "--help":
                 # Handle the -h / --help switch

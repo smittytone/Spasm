@@ -106,6 +106,7 @@ For example: store the 16-bit value `0x1A2B` from the address `0xFF00`:
 - `-q` / `--quiet` &mdash; display no extra information during assembly.
     -  This always overrides verbose mode.
 - `-s` / `--start` &mdash; Set the start address of the assembled code, specified as a hex or decimal value.
+    - **Note** You can use $ as a prefix for a hex value, but you will need to place the address in single quotes, eg. `spasmm.py zzz.asm -s '$FF00'` to avoid confusing Bash.
 - `-o` / `--output` &mdash; Name the output file.
 - `-l` / `--lower` &mdash; Display opcodes in lowercase.
 - `-u` / `--upper` &mdash; Display opcodes in uppercase.
