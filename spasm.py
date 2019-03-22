@@ -1233,7 +1233,7 @@ def disassembleFile(path):
                     break
                 
                 # Add the op's value to the machine code output string
-                byteString = byteString + "{0:02X}".format(byte)
+                byteString += "{0:02X}".format(byte)
 
             # Print or process the line
             if gotOp is False:
@@ -1241,7 +1241,7 @@ def disassembleFile(path):
                 linestring = "0x{0:04X}".format(address) + "    " + op + "   "
                 
                 # Add a space for three-character opcodes
-                if len(op) == 3: linestring = linestring + " "
+                if len(op) == 3: linestring += " "
 
                 # Gather the operand bytes (if any) according to addressing mode
                 if addressMode == ADDR_MODE_INHERENT:
