@@ -1300,18 +1300,13 @@ def disassemble_file(file_path):
 
                         # Add the # symbol it indicate addressing type
                         line_str += "#"
-                elif address_mode == ADDR_MODE_DIRECT:
-                    # Direct addressing... add the > symbol it indicate addressing type
-                    line_str += ">"
+                elif address_mode in (ADDR_MODE_DIRECT, ADDR_MODE_INDEXED, ADDR_MODE_EXTENDED):
+                    # Indexed, Direct and Extended addressing
                     got_op = True
                     post_op_bytes = 1
                     address += 1
-                elif address_mode in (ADDR_MODE_INDEXED, ADDR_MODE_EXTENDED):
-                    # Indexed and Extended addressing
-                    got_op = True
-                    post_op_bytes = 1
-                    address += 1
-                    if address_mode == ADDR_MODE_EXTENDED: post_op_bytes += 2
+                    if address_mode == ADDR_MODE_EXTENDED: post_op_bytes += 1
+                    if address_mode == ADDR_MODE_DIRECT: line_str += ">"
                 elif address_mode > 10:
                     # Handle branch operation offset bytes
                     got_op = True
@@ -1364,6 +1359,10 @@ def disassemble_file(file_path):
                         if next_byte < 0x80:
                             # Pull the 5-bit offset out of the post-op byte (bits 0-4)
                             index_str = "${0:02X}".format(code) + "," + reg
+                        elif next_byte == 0x9F:
+                            # Extended indirect
+                            post_op_bytes = 2
+                            index_code = 3
                         else:
                             if code == 0x04: index_str = "," + reg
                             if code in (0x08, 0x09):
@@ -1389,12 +1388,12 @@ def disassemble_file(file_path):
                         # Collect the extra byte(s) when 'index_code' is 1 or 2
                         if post_op_bytes > 0: opnd += (next_byte << (8 * (post_op_bytes - 1)))
                         if post_op_bytes == 1:
-                            format_str = "${0:0" + str(index_code * 2) + "X}"
-                            index_str = format_str.format(opnd) + index_str
+                            if index_code < 3:
+                                format_str = "${0:0" + str(index_code * 2) + "X}"
+                                index_str = format_str.format(opnd) + index_str
+                            else:
+                                index_str = "${0:04X}".format(opnd)
                             if is_indirect is True: index_str = "(" + index_str + ")"
-                elif address_mode == ADDR_MODE_EXTENDED:
-                    if post_op_bytes in (2, 1): opnd += (next_byte << (8 * (post_op_bytes - 1)))
-                    if post_op_bytes == 1: index_str = "(${0:04X}".format(opnd) + ")"
                 else:
                     # Pick up any other mode (including plain immediate addressing) and output a value
                     if post_op_bytes > 0: opnd += (next_byte << (8 * (post_op_bytes - 1)))
