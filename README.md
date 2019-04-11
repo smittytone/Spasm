@@ -77,10 +77,10 @@ Comments can be entered by prefixing them with a `;`. At this time, multi-line c
 - `EQU` &mdash; assign a value to a label, eg. `@label EQU 255`.
 - `END` &mdash; optional end-of-code marker.
 - `RMB` &mdash; reserve *n* memory bytes at this address, eg. `@label RMB 8 ; add 8 bytes for data storage`.
-- `FCB` &mdash; store the following 8-bit value or values at this address, eg. 
+- `FCB` &mdash; store the following 8-bit value or values at this address, eg.
     - `@label FCB $FF         ; poke 255 to this address`.
     - `@label FCB $FF,$01,$02 ; poke 255, 0, 2 to sequential addresses from this`.
-- `FDB` &mdash; store the following 16-bit value or values at this address, eg. 
+- `FDB` &mdash; store the following 16-bit value or values at this address, eg.
     - `@label FDB $FF00       ; poke 65280 to this address`.
     - `@label FDB $FF00,$FF01 ; poke 65280, 65281 to sequential addresses`.
     - **Note** The 6809 expects the most-significant byte at the lowest address.
@@ -97,6 +97,10 @@ For example: store the 16-bit value `0x1A2B` from the address `0xFF00`:
 0xFF01    0x2B
 ```
 
+## Sample Code ##
+
+There are sample 6809 assembler programs and assembled `.6809` files in the [samples](/samples) folder.
+
 ## Command Line ##
 
 *spasm* is a command line tool. It supports the following switches:
@@ -106,7 +110,7 @@ For example: store the 16-bit value `0x1A2B` from the address `0xFF00`:
 - `-q` / `--quiet` &mdash; display no extra information during assembly.
     -  This always overrides verbose mode.
 - `-s` / `--start` &mdash; Set the start address of the assembled code, specified as a hex or decimal value.
-    - **Note** You can use $ as a prefix for a hex value, but you will need to place the address in single quotes, eg. `spasmm.py zzz.asm -s '$FF00'` to avoid confusing Bash.
+    - **Note** You can use $ as a prefix for a hex value, but you will need to place the address in single quotes, eg. `spasm.py zzz.asm -s '$FF00'` to avoid confusing Bash.
 - `-o` / `--output` &mdash; Name the output file.
 - `-l` / `--lower` &mdash; Display opcodes in lowercase.
 - `-u` / `--upper` &mdash; Display opcodes in uppercase.
