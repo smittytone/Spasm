@@ -451,7 +451,7 @@ def decode_op(an_op, line):
     if an_op[0] == "L":
         # Handle long branch instructions
         line.branch_op_type = BRANCH_MODE_LONG
-        an_op = an_op[-3]
+        an_op = an_op[1:]
     else:
         line.branch_op_type = BRANCH_MODE_SHORT
 
@@ -752,13 +752,16 @@ def write_code(line_parts, line):
             print(SPACES[:55] + line_parts[0])
             return True
 
+        if line.pseudo_op_type == 3: byte_str += "{0:02X}".format(line.opnd)
+        if line.pseudo_op_type == 4: byte_str += "{0:04X}".format(line.opnd)
+
         # First, add the 16-bit address
         if byte_str:
             # Display the address at the start of the op's first byte
             display_str = "0x{0:04X}".format(prog_count - int(len(byte_str) / 2)) + "    "
         elif line.pseudo_op_type > 0:
             # Display the address at the start of the pseudoop's first byte
-            # NOTE pseudo ops have no byteString, hence this separate entry
+            # NOTE most pseudo ops have no byteString, hence this separate entry
             display_str = "0x{0:04X}".format(prog_count) + "    "
         else:
             # Display no address for any other line, eg. comment-only lines
@@ -1649,7 +1652,7 @@ if __name__ == '__main__':
                     sys.exit(1)
                 address = sys.argv[index + 1]
                 base = 10
-                if address[:1] == "$": address = "0x" + address[1:]
+                if address[0] == "$": address = "0x" + address[1:]
                 if address[:2] == "0x": base = 16
                 try:
                     start_address = int(address, base)
