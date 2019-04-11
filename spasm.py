@@ -227,7 +227,7 @@ class LineData:
 # Functions                                                              #
 ##########################################################################
 
-def process_file(file_path):
+def assemble_file(file_path):
     '''
     Assemble a single '.asm' file using a two-pass process to identify
     labels and pseudo-ops, etc.
@@ -235,6 +235,7 @@ def process_file(file_path):
     Args:
         file_path (str): The path to a .asm file.
     '''
+
     global pass_count, prog_count, code, labels
 
     if verbose is True:
@@ -1161,7 +1162,7 @@ def error_message(err_code, err_line):
         err_line (int): The program on which the error occurred.
     '''
 
-    if err_code > 0 and err_code < len(ERRORS):
+    if 0 < err_code < len(ERRORS):
         # Show standard message
         print("Error on line " + str(err_line + 1) + ": " + ERRORS[str(err_code)])
     else:
@@ -1180,63 +1181,67 @@ def show_verbose(message):
     if verbose is True: print(message)
 
 
-def disassembleFile(path):
+def disassemble_file(file_path):
     '''
     Disassemble the .6809 file at 'path'
     '''
-    global code
 
-    data = None
-    fileExists = os.path.exists(path)
-    if fileExists is True:
-        with open(path, "r") as file: data = file.read()
+    file_data = None
+    if os.path.exists(file_path) is True:
+        with open(file_path, "r") as file: file_data = file.read()
     else:
         print("No file")
 
-    if data is not None:
-        filedata = json.loads(data)
-        code = filedata["code"]
-        address = filedata["address"]
-        opBytes = 0
+    if file_data is not None:
+        # Prep the disassembly
+        data = json.loads(file_data)
+        code = data["code"]
+        address = data["address"]
+        post_op_bytes = 0
         opnd = 0
-        special = 0
-        preOpByte = 0
-        addressMode = 0
-        linestring = ""
-        byteString = ""
-        gotOp = False
+        special_opnd = 0
+        pre_op_byte = 0
+        index_code = 0
+        address_mode = ADDR_MODE_NONE
+        line_str = ""
+        byte_str = ""
+        index_str = ""
+        got_op = False
 
+        print("Address   Operation       Bytes")
+        print("-------------------------------")
         # Run through the machine code byte by byte
-        for i in range(0, len(code)):
+        for unit in code:
             # Get the current byte
-            byte = ord(code[i])
+            next_byte = ord(unit)
+            byte_str += "{0:02X}".format(next_byte)
 
             # Combine the current byte with the previous one, if that
             # was 0x10 or 0x11 (ie. extended ISA)
-            if preOpByte != 0:
-                byte = (preOpByte << 8) + byte
-                preOpByte = 0
+            if pre_op_byte != 0:
+                next_byte = (pre_op_byte << 8) + next_byte
+                pre_op_byte = 0
 
             found = False
-            op = ""
+            the_op = ""
 
-            if gotOp is False:
+            if got_op is False:
                 # Look for an op first
-                if byte == 0x10 or byte == 0x11:
+                if next_byte in (0x10, 0x11):
                     # Extended ISA indicator found, so hold for combination
                     # with the next loaded byte of code
-                    preOpByte = byte
+                    pre_op_byte = next_byte
                     continue
 
                 # Run through the main ISA to find the op
-                for j in range(0, len(ISA), 6):
+                for i in range(0, len(ISA), 6):
                     # Run through each op's possible op codes to find a match
-                    for k in range(j + 1, j + 6):
-                        if ISA[k] == byte:
+                    for j in range(i + 1, i + 6):
+                        if ISA[j] == next_byte:
                             # Got it
-                            op = ISA[j]
+                            the_op = ISA[i]
                             # Value of 'k' indicates which addressing mode we have
-                            addressMode = k - j
+                            address_mode = j - i
                             found = True
                             break
                     if found is True:
@@ -1244,140 +1249,184 @@ def disassembleFile(path):
 
                 if found is False:
                     # Didn't match the byte in the main ISA, so check for a branch op
-                    for j in range(0, len(BSA), 3):
+                    for i in range(0, len(BSA), 3):
                         # Run through each op's possible op codes to find a match
-                        for k in range(j + 1, j + 3):
-                            if BSA[k] == byte:
+                        for j in range(i + 1, i + 3):
+                            if BSA[j] == next_byte:
                                 # Got it
-                                op = BSA[j]
+                                the_op = BSA[i]
                                 # Correct the name of an extended branch op
-                                if k - j == 2: op = "L" + op
-                                addressMode = k - j + 10
+                                # Add 10 to 'address_mode' to indicate branching
+                                if j - i == 2: the_op = "L" + the_op
+                                address_mode = j - i + 10
                                 found = True
                                 break
                         if found is True:
                             break
 
-                # If we still haven't matched the op, print a warning
+                # If we still haven't matched the op, print a warning and bail
                 if found is False:
-                    print("Bad Op: " + "{0:02X}".format(byte))
-                    address += 1
-                    # TODO Should we just bail at this point?
-                    break
+                    print("Bad Op: " + "{0:02X}".format(next_byte))
+                    return
 
-                # Add the op's value to the machine code output string
-                byteString += "{0:02X}".format(byte)
-
-            # Print or process the line
-            if gotOp is False:
                 # Set the initial part of the output line
-                linestring = "0x{0:04X}".format(address) + "    " + op + "   "
+                line_str = "0x{0:04X}".format(address) + "    " + the_op + "   "
 
                 # Add a space for three-character opcodes
-                if len(op) == 3: linestring += " "
+                if len(the_op) == 3: line_str += " "
 
                 # Gather the operand bytes (if any) according to addressing mode
-                if addressMode == ADDR_MODE_INHERENT:
-                    # Inherent addressing, so no operand: just dump the line
-                    print(linestring + setSpacer(linestring) + byteString)
+                if address_mode == ADDR_MODE_INHERENT:
+                    # There's no operand with inherent addressing, so just dump the line
+                    print(line_str + set_spacer(line_str) + byte_str)
                     address += 1
-                    byteString = ""
-                elif addressMode == ADDR_MODE_IMMEDIATE:
+                    byte_str = ""
+                elif address_mode == ADDR_MODE_IMMEDIATE:
                     # Immediate addressing
-                    opBytes = 1
-                    gotOp = True
+                    got_op = True
+                    post_op_bytes = 1
                     address += 1
 
                     # Does the immediate postbyte have a special value?
                     # It will for PSH/PUL and TFR/EXG ops
-                    if op[:1] == "P":
-                        special = 1 if op[-1:] == "S" else 2
-                    elif op == "TFR" or op == "EXG":
-                        special = 3
+                    if the_op[:1] == "P":
+                        special_opnd = 1 if the_op[-1:] == "S" else 2
+                    elif the_op in ("TFR", "EXG"):
+                        special_opnd = 3
                     else:
-                        linestring += "#"
                         # Set the number of operand bytes to gather to the byte-size of the
                         # named register (eg. two bytes for 16-bit registers
-                        if op[-1:] == "X" or op[-1:] == "Y" or op[-1:] == "D" or op[-1:] == "S" or op[-1:] == "U" or op[-2:] == "PC": opBytes = 2
-                elif addressMode == ADDR_MODE_DIRECT:
-                    # Direct addressing
-                    linestring = linestring + ">"
-                    gotOp = True
-                    opBytes = 1
-                    address += 1
-                elif addressMode == ADDR_MODE_INDEXED:
-                    # Indexed addressing TODO
-                    gotOp = True
-                    address += 1
-                elif addressMode == ADDR_MODE_EXTENDED:
-                    # Extended addressing TODO
-                    gotOp = True
-                    address += 1
-                elif addressMode > 10:
-                    # Handle ranch operation offset bytes
-                    gotOp = True
-                    address += 1
-                    opBytes = 1
+                        if the_op[-1:] in ("X", "Y", "D", "S", "U", "C"): post_op_bytes = 2
 
-                    # Is the branch and extended one?
-                    if addressMode - 10 == BRANCH_MODE_LONG: opBytes = 2
+                        # Add the # symbol it indicate addressing type
+                        line_str += "#"
+                elif address_mode == ADDR_MODE_DIRECT:
+                    # Direct addressing... add the > symbol it indicate addressing type
+                    line_str += ">"
+                    got_op = True
+                    post_op_bytes = 1
+                    address += 1
+                elif address_mode in (ADDR_MODE_INDEXED, ADDR_MODE_EXTENDED):
+                    # Indexed and Extended addressing
+                    got_op = True
+                    post_op_bytes = 1
+                    address += 1
+                    if address_mode == ADDR_MODE_EXTENDED: post_op_bytes += 2
+                elif address_mode > 10:
+                    # Handle branch operation offset bytes
+                    got_op = True
+                    post_op_bytes = 2 if address_mode - 10 == BRANCH_MODE_LONG else 1
+                    address += 1
             else:
                 # We are handling the operand bytes having found the op
-                byteString = byteString + "{0:02X}".format(byte)
-                if addressMode - 10 == BRANCH_MODE_SHORT:
-                    # 'byte' is the 8-bit offset
+                # Check for the branching operations (short then long) first
+                if address_mode - 10 == BRANCH_MODE_SHORT:
+                    # 'next_byte' is an 8-bit branch offset
                     target = 0
-                    if byte & 0x80 == 0x80:
+                    if next_byte & 0x80 == 0x80:
                         # Sign bit set
-                        target = address + 1 - (255 - byte)
+                        target = address + 1 - (255 - next_byte)
                     else:
-                        target = address + 1 + byte
-                    linestring += "${0:04X}".format(target)
-                elif addressMode - 10 == BRANCH_MODE_LONG:
-                    # 'byte' is part of a 16-bit offset
-                    if opBytes > 0: opnd += (byte << (8 * (opBytes - 1)))
-
-                    if opBytes == 1:
+                        target = address + 1 + next_byte
+                    line_str += "${0:04X}".format(target)
+                elif address_mode - 10 == BRANCH_MODE_LONG:
+                    # 'next_byte' is part of a 16-bit branch offset
+                    if post_op_bytes > 0: opnd += (next_byte << (8 * (post_op_bytes - 1)))
+                    if post_op_bytes == 1:
                         target = 0
                         if opnd & 0x8000 == 0x8000:
                             # Sign bit set
                             target = address + 1 - (65535 - opnd)
                         else:
                             target = address + 1 + opnd
-                        linestring += "${0:04X}".format(target)
-                elif addressMode == ADDR_MODE_IMMEDIATE and special > 0:
-                    if special == 1:
-                        # PSHS/PULS
-                        linestring += disPushS(byte)
-                    elif special == 2:
-                        # PSHU/PULU
-                        linestring += disPushU(byte)
+                        line_str += "${0:04X}".format(target)
+                elif address_mode == ADDR_MODE_IMMEDIATE and special_opnd > 0:
+                    # See above for the meanings of 'special_opnd'
+                    if special_opnd == 1:
+                        line_str += get_puls_pshs_regs(next_byte)
+                    elif special_opnd == 2:
+                        line_str += get_pulu_pshu_regs(next_byte)
                     else:
-                        # TFR/EXG
-                        linestring += disTransfer(byte)
-                    special = 0
-                else:
-                    if opBytes > 0: opnd += (byte << (8 * (opBytes - 1)))
-                    linestring = linestring + "{0:02X}".format(byte)
+                        line_str += get_tfr_exg_regs(next_byte)
+                    special_opnd = 0
+                elif address_mode == ADDR_MODE_INDEXED:
+                    # 'index_code' is set according to the first post-op byte
+                    if index_code == 0:
+                        # Check for Indirect Indexed addressing
+                        is_indirect = False
+                        if next_byte & 0x10 == 0x10 and next_byte > 0x80: is_indirect = True
 
-                # Decrement the number-of-operand-bytes counter,
+                        # Get the named register from the first post-op byte (bits 5 & 6)
+                        reg = get_indexed_reg(next_byte)
+
+                        # Get the operation code from the first post-op byte (bits 0-4)
+                        code = next_byte & 0x0F
+                        if next_byte < 0x80:
+                            # Pull the 5-bit offset out of the post-op byte (bits 0-4)
+                            index_str = "${0:02X}".format(code) + "," + reg
+                        else:
+                            if code == 0x04: index_str = "," + reg
+                            if code in (0x08, 0x09):
+                                # 8-, 16-bit offset from reg
+                                index_str = "," + reg
+                                post_op_bytes += (code - 0x07)
+                                index_code = code - 0x07
+                            if code == 0x06: index_str = "A," + reg
+                            if code == 0x05: index_str = "B," + reg
+                            if code == 0x0B: index_str = "D," + reg
+                            if code == 0x00: index_str = "," + reg + "+"
+                            if code == 0x01: index_str = "," + reg + "++"
+                            if code == 0x02: index_str = ",-" + reg
+                            if code == 0x03: index_str = ",--" + reg
+                            if code in (0x0C, 0x0D):
+                                # Constant offset From PC
+                                index_str = ",PC"
+                                post_op_bytes += (code - 0x0B)
+                                index_code = code - 0x0B
+                        # Wrap the operand string in brackets to indicate indirection
+                        if is_indirect is True: index_str = "(" + index_str + ")"
+                    else:
+                        # Collect the extra byte(s) when 'index_code' is 1 or 2
+                        if post_op_bytes > 0: opnd += (next_byte << (8 * (post_op_bytes - 1)))
+                        if post_op_bytes == 1:
+                            format_str = "${0:0" + str(index_code * 2) + "X}"
+                            index_str = format_str.format(opnd) + index_str
+                            if is_indirect is True: index_str = "(" + index_str + ")"
+                elif address_mode == ADDR_MODE_EXTENDED:
+                    if post_op_bytes in (2, 1): opnd += (next_byte << (8 * (post_op_bytes - 1)))
+                    if post_op_bytes == 1: index_str = "(${0:04X}".format(opnd) + ")"
+                else:
+                    # Pick up any other mode (including plain immediate addressing) and output a value
+                    if post_op_bytes > 0: opnd += (next_byte << (8 * (post_op_bytes - 1)))
+                    line_str += "{0:02X}".format(next_byte)
+
+                # Decrement the operand bytes counter,
                 # and increase the current memory address
-                opBytes -= 1
+                post_op_bytes -= 1
                 address += 1
 
-                if opBytes == 0:
+                if post_op_bytes == 0:
                     # We've got all the operand bytes we need, so output the line
-                    sp = setSpacer(linestring)
-                    print(linestring + sp + byteString)
-                    gotOp = False
+                    # and zero key variables
+                    line_str += index_str
+                    space_str = set_spacer(line_str)
+                    print(line_str + space_str + byte_str)
+                    got_op = False
+                    index_code = 0
                     opnd = 0
-                    byteString = ""
+                    byte_str = ""
+                    index_str = ""
 
 
 def set_spacer(spaces):
     '''
-    Return an appropriate number of spaces for the output
-    Parameter: 'l' is the input line
+    Determing the number of spaces to pad a printed line.
+
+    Args:
+        spaces (int): The length of the unpadded line.
+
+    Returns:
+        str: A string of spaces to pad the line.
     '''
 
     num = 26 - len(spaces)
@@ -1386,12 +1435,31 @@ def set_spacer(spaces):
     return SPACES[:num]
 
 
-def dis_transfer(byte_value):
+def get_indexed_reg(byte_value):
     '''
-    Generic TFR/EXG operand string generator, converting a byte value
-    into disassembled output, eg. "A,B"
+    Convert a post-op byte value into a register name.
+
     Args:
-        byte_value (int): A byte value.
+        byte_value (int): The post-op byte value.
+
+    Returns:
+        str: The indicated register.
+    '''
+
+    byte_value = (byte_value & 0x60) >> 5
+    regs = ("X", "Y", "U", "S")
+    if byte_value < 4: return regs[byte_value]
+    return "N/A"
+
+
+def get_tfr_exg_regs(byte_value):
+    '''
+    Generic TFR/EXG operand string generator, converting a post-op byte value
+    into disassembled output, eg. "A,B"
+
+    Args:
+        byte_value (int): The post-op byte value.
+
     Returns:
         str: The register string.
     '''
@@ -1400,48 +1468,65 @@ def dis_transfer(byte_value):
     from_nibble = (byte_value & 0xF0) >> 4
     to_nibble = byte_value & 0x0F
     from_str = reg_list[from_nibble - 2] if from_nibble > 5 else reg_list[from_nibble]
-    to_str = reg_list[to_nibble - 2] if d > 5 else reg_list[to_nibble]
+    to_str = reg_list[to_nibble - 2] if to_nibble > 5 else reg_list[to_nibble]
     return from_str + "," + to_str
 
 
-def dis_push_s(byte_value):
+def get_puls_pshs_regs(byte_value):
     '''
-    Pass on the correct register lists for PSHS or PULS
-    Parameter: 'b' is the byte value
-    '''
+    Pass on the correct register lists for PSHS or PULS.
 
-    return disPush(byte_value, ("CC", "A", "B", "DP", "X", "Y", "U", "PC"))
+    Args:
+        byte_value (int): The post-op byte value.
 
-
-def dis_push_u(byte_value):
-    '''
-    Pass on the correct register lists for PSHU or PULU
-    Parameter: 'b' is the byte value
+    Returns:
+        str: The list of registers referenced in the operand.
     '''
 
-    return disPush(byte_value, ("CC", "A", "B", "DP", "X", "Y", "S", "PC"))
+    return get_pul_psh_regs(byte_value, ("CC", "A", "B", "DP", "X", "Y", "U", "PC"))
 
 
-def dis_push(btye_value, reg_list):
+def get_pulu_pshu_regs(byte_value):
     '''
-    Generic PUL/PSH operand string generator
-    Parameters: 'b' is the byte value, 'r' the array of register names
+    Pass on the correct register lists for PSHU or PULU.
+
+    Args:
+        byte_value (int): The post-op byte value..
+
+    Returns:
+        str: The list of registers referenced in the operand.
+    '''
+
+    return get_pul_psh_regs(byte_value, ("CC", "A", "B", "DP", "X", "Y", "S", "PC"))
+
+
+def get_pul_psh_regs(byte_value, reg_list):
+    '''
+    Generic PUL/PSH operand string generator.
+
+    Args:
+        byte_value (int):  The post-op byte value.
+        reg_list   (list): Names of possible registers.
+
+    Returns:
+        str: The list of registers referenced in the operand.
     '''
 
     output = ""
     for i in range(0, 8):
-        if btye_value & (2 ** i) > 0:
+        if byte_value & (2 ** i) > 0:
             # Bit is set, so add the register to the output string, 'os'
             output += (reg_list[i] + ",")
     # Remove the final comma
-    if output: output = output[0:len(os)-1]
+    if output: output = output[0:len(output) - 1]
+
     # Return the output string, eg. "CC,A,X,Y,PC"
     return output
 
 
 def show_help():
     '''
-    Display Spasm's help information
+    Display Spasm's help information.
     '''
 
     print(" ")
@@ -1477,31 +1562,32 @@ def write_file(file_path):
     byte_str = ""
     for i in range(0, len(code)): byte_str += chr(code[i])
 
+    # Convert to JSON
     the_op = {"address": start_address, "code": byte_str}
     json_op = json.dumps(the_op, ensure_ascii=False)
 
-    current_dir = os.getcwd()
-    file_exists = os.path.exists(os.path.join(current_dir, file_path))
+    # Write out the file
     with open(file_path, "w") as file: file.write(json_op)
     print("File " + file_path + " written")
 
 
 def get_files():
     '''
-    Determine all the '.asm' files in the script's directory, and process them one by one
+    Determine all the '.asm' and '.6809' files in the script's directory.
     '''
 
     current_dir = os.getcwd()
     files = [file for file in os.listdir(current_dir) if os.path.isfile(os.path.join(current_dir, file))]
 
     # Count the number of .asm and .6809 files
-    asm_count = 0
-    dis_count = 0
+    asm_files = []
+    dis_files = []
 
     for file in files:
-        if file[-3:] == "asm": asm_count += 1
-        if file[-4:] == "6809": dis_count += 1
+        if file[-3:] == "asm": asm_files.append(file)
+        if file[-4:] == "6809": dis_files.append(file)
 
+    asm_count = len(asm_files)
     if asm_count == 1:
         show_verbose("Processing 1 .asm file in " + current_dir)
     elif asm_count > 1:
@@ -1509,6 +1595,7 @@ def get_files():
     else:
         show_verbose("No suitable .asm files found in " + current_dir)
 
+    dis_count = len(dis_files)
     if dis_count == 1:
         show_verbose("Processing 1 .6809 file in " + current_dir)
     elif dis_count > 1:
@@ -1516,18 +1603,22 @@ def get_files():
     else:
         show_verbose("No suitable .6809 files found in " + current_dir)
 
-    handle_files(files)
+    handle_files(asm_files)
+    handle_files(dis_files)
 
 
-def handle_files(files):
+def handle_files(the_files=None):
     '''
-    PASS all '.asm' files on for assembly, '.6809' files on for disassembly
+    Pass on all supplied '.asm' files on for assembly, '.6809' files for disassembly.
+
+    Args:
+        the_files (list): The .asm or .6809 files.
     '''
 
-    if files:
-        for file in files:
-            if file[-3:] == "asm": process_file(file)
-            if file[-4:] == "6809": disassemble_file(file)
+    if the_files:
+        for file in the_files:
+            if file[-3:] == "asm": assemble_file(file)
+            if file[-3:] == "809": disassemble_file(file)
 
 
 if __name__ == '__main__':
