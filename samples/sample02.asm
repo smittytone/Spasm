@@ -1,7 +1,8 @@
 ; Sample 6809 program from 'Language Of The Dragon - 6809 Assembler'
 ; written by Mike James and published by Sigma Technical Press in 1983
 ; Corrected by Tony Smith, 2019
-@START      BSR     @UPDATE
+@START      ORG     $7000
+            BSR     @UPDATE
             LBSR    @UPBAT
             LBSR    @BBOUNCE
             LDA     #$80
