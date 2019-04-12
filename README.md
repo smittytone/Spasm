@@ -112,7 +112,7 @@ There are sample 6809 assembler programs and assembled `.6809` files in the [sam
 
 ## Release Notes ##
 
-- 1.0.0 &mdash; *Unreleased*
+- 1.0.0 &mdash; *12 April 2019*
     - Initial public release.
 
 ## Copyright And Licence ##
