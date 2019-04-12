@@ -373,6 +373,7 @@ def parse_line(line, line_number):
             label = labels[got_label]
             if pass_count == 1:
                 if label["addr"] != "UNDEF":
+
                     error_message(2, line_number) # Duplicate label
                     return False
                 # Set the label address
@@ -598,15 +599,15 @@ def decode_opnd(an_opnd, line):
             if len(parts) > 1:
                 # We have a list of values. Convert them to hex bytes for internal processing
                 byte_string = ""
-                format_str = "{0:02X}" if line.pseudo_op_type == 2 else "{0:04X}"
+                format_str = "{0:02X}" if line.pseudo_op_type == 3 else "{0:04X}"
                 for part in parts:
-                    value = get_int_value(parts)
-                    byte_string += format_str.format(value)
+                    byte_string += format_str.format(get_int_value(part))
                 # Preserve the byte string for later then bail
                 line.pseudo_op_value = byte_string
                 opnd_value = 0
-            # Not a list, so just get the value of the operand
-            opnd_value = get_int_value(opnd_str)
+            else:
+                # Not a list, so just get the value of the operand
+                opnd_value = get_int_value(opnd_str)
         elif line.indirect_flag is False:
             # Get the value for any operand other than indexed
             opnd_value = get_int_value(opnd_str)
@@ -659,6 +660,7 @@ def process_pseudo_op(line_parts, line):
 
     result = False
     label_name = line_parts[0]
+    if label_name == " ": label_name = ""
     opnd_value = line.opnd
 
     if line.pseudo_op_type == 1:
