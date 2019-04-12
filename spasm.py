@@ -295,7 +295,12 @@ def assemble_file(file_path):
             print(display_str)
 
     # Write out the machine code file
-    if out_file is not None and break_flag is False: write_file(out_file)
+    if out_file is not None and break_flag is False:
+        if out_file == "*":
+            o_file, _ = os.path.splitext(file_path)
+            write_file(o_file + ".6089")
+        else:
+            write_file(out_file)
 
 
 def parse_line(line, line_number):
@@ -1702,10 +1707,14 @@ if __name__ == '__main__':
                 show_help()
                 sys.exit(0)
             elif item in ("-o", "--outfile"):
-                if index + 1 >= len(sys.argv):
-                    print("[ERROR] -o / --outfile must be followed by a file name")
-                    sys.exit(1)
-                out_file = sys.argv[index + 1]
+                if index + 1 >= len(sys.argv) or sys.argv[index + 1][0] == "-":
+                    out_file = "*"
+                else:
+                    out_file = sys.argv[index + 1]
+                    _, file_ext = os.path.splitext(out_file)
+                    if file_ext != ".6809":
+                        print("[ERROR] -o / --outfile must specify a .6089 file")
+                        sys.exit(1)
                 # Make sure 'outfile' is a .6809 file
                 parts = out_file.split(".")
                 if parts == 1: out_file += ".6809"

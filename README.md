@@ -1,19 +1,15 @@
-# spasm 1.0.0 #
+# SPASM ‘Smittytone’s Primary 6809 ASeMbler’ 1.0.0 #
 
-### aka ‘Smittytone’s Primary 6809 ASeMbler’ ###
+*spasm* is an assembler/disassembler for the Motorola 6809 microprocessor written in Python 3.
 
-&nbsp;<br />*spasm* is an assembler/disassembler for the Motorola 6809 microprocessor written in Python 3.
-
-It is currently a work in progress. Assembler testing is underway, and disassembly is not fully implemented.
-
-It was written to generate 6809 machine code for a separate processor emulation project. As such, it does not output files into a standard format, but in the form of JSON intended to be read by the emulator. The output file’s extension is `.6809`, but it is a texf file containing a JSON object:
+It was written to generate 6809 machine code for a separate processor emulation project. As such, it does not output files into a standard format, but in the form of JSON intended to be read by the emulator. The output file’s extension is `.6809`, but it is a text file containing a JSON object:
 
 ```json
 { "address" : <start_address_of_code>,
   "code"    : <string_of_assembled_code_bytes> }
 ```
 
-A sample file, `sample.6809`, is included with the repository.
+A sample file, `sample01.6809`, is included with the repository.
 
 Input is in the form of one or more `.asm` files which are text files containing the source code. For example:
 
@@ -48,7 +44,6 @@ Input is in the form of one or more `.asm` files which are text files containing
 @exit       CLRA
 @store      RMB @entlen
             RTS                  ; return
-
 ```
 
 ## Assembler Conventions ##
@@ -105,16 +100,15 @@ There are sample 6809 assembler programs and assembled `.6809` files in the [sam
 
 *spasm* is a command line tool. It supports the following switches:
 
-- `-h` / `--help` &mdash; print help information.
-- `-v` / `--verbose` &mdash; display extra information during assembly. This is the default.
-- `-q` / `--quiet` &mdash; display no extra information during assembly.
-    -  This always overrides verbose mode.
-- `-s` / `--start` &mdash; Set the start address of the assembled code, specified as a hex or decimal value.
-    - **Note** You can use $ as a prefix for a hex value, but you will need to place the address in single quotes, eg. `spasm.py zzz.asm -s '$FF00'` to avoid confusing Bash.
-- `-o` / `--output` &mdash; Name the output file.
-- `-l` / `--lower` &mdash; Display opcodes in lowercase.
-- `-u` / `--upper` &mdash; Display opcodes in uppercase.
-    - The above two switch will overwrite each other; if both are called: the last one wins. If neither is used, the output matches the input.
+| Option | Alternative | Action |
+| :-: | :-- | :-- |
+| `-h` | `--help` | Print help information |
+| `-v` | `--verbose` | Display extra information during assembly. This is the default |
+| `-q` | `--quiet` | Display no extra information during assembly. This always overrides verbose mode |
+| `-s` | `--start` | Set the start address of the assembled code, specified as a hex or decimal value.<br />**Note** You can use $ as a prefix for a hex value, but you will need to place the address in single quotes, eg. `spasm.py zzz.asm -s '$FF00'` to avoid confusing Bash |
+| `-o` | `--output` | Cause the 6809 output file to be written and, optionally, name it. If you pass no name, the output file name will match the input file |
+| `-l` | `--lower` | Display opcodes in lowercase |
+| `-u` | `--upper` | Display opcodes in uppercase.<br />**Note** This and the above switch will overwrite each other; if both are called: the last one wins. If neither is used, the output matches the input |
 
 ## Release Notes ##
 
