@@ -238,10 +238,6 @@ def assemble_file(file_path):
 
     global pass_count, prog_count, code, labels
 
-    if verbose is True:
-        print("****** PROCESSING FILE  ******")
-        print(file_path)
-
     # Clear the storage arrays
     lines = []
     labels = []
@@ -252,8 +248,12 @@ def assemble_file(file_path):
         with open(file_path, "r") as file:
             lines = list(file)
     else:
-        show_verbose("File " + file_path + " does not exist, skipping")
+        show_verbose("[ERROR] File " + file_path + " does not exist, skipping")
         return
+
+    if verbose is True:
+        print("****** PROCESSING FILE  ******")
+        print(file_path)
 
     # Do the assembly in two passes
     break_flag = False
@@ -1193,7 +1193,7 @@ def disassemble_file(file_path):
     if os.path.exists(file_path) is True:
         with open(file_path, "r") as file: file_data = file.read()
     else:
-        print("No file")
+        print("[ERROR] File " + file_path + " does not exist, skipping")
 
     if file_data is not None:
         # Prep the disassembly
@@ -1586,8 +1586,9 @@ def get_files():
     dis_files = []
 
     for file in files:
-        if file[-3:] == "asm": asm_files.append(file)
-        if file[-4:] == "6809": dis_files.append(file)
+        _, file_ext = os.path.splitext(file)
+        if file_ext == ".asm": asm_files.append(file)
+        if file_ext == ".6809": dis_files.append(file)
 
     asm_count = len(asm_files)
     if asm_count == 1:
@@ -1619,8 +1620,8 @@ def handle_files(the_files=None):
 
     if the_files:
         for file in the_files:
-            if file[-3:] == "asm": assemble_file(file)
-            if file[-3:] == "809": disassemble_file(file)
+            if file[-1:] == "m": assemble_file(file)
+            if file[-1:] == "9": disassemble_file(file)
 
 
 if __name__ == '__main__':
@@ -1648,7 +1649,7 @@ if __name__ == '__main__':
             elif item in ("-s", "--startaddress"):
                 # Handle the -s / --startaddress switch
                 if index + 1 >= len(sys.argv):
-                    print("Error: -s / --startaddress must be followed by an address")
+                    print("[ERROR] -s / --startaddress must be followed by an address")
                     sys.exit(1)
                 address = sys.argv[index + 1]
                 base = 10
@@ -1657,7 +1658,7 @@ if __name__ == '__main__':
                 try:
                     start_address = int(address, base)
                 except:
-                    print("Error: -s / --start_address must be followed by a valid address")
+                    print("[ERROR] -s / --start_address must be followed by a valid address")
                     sys.exit(1)
                 show_verbose("Code start address set to 0x{0:04X}".format(start_address))
                 arg_flag = True
@@ -1667,7 +1668,7 @@ if __name__ == '__main__':
                 sys.exit(0)
             elif item in ("-o", "--outfile"):
                 if index + 1 >= len(sys.argv):
-                    print("Error: -o / --outfile must be followed by a file name")
+                    print("[ERROR] -o / --outfile must be followed by a file name")
                     sys.exit(1)
                 out_file = sys.argv[index + 1]
                 # Make sure 'outfile' is a .6809 file
@@ -1675,17 +1676,17 @@ if __name__ == '__main__':
                 if parts == 1: out_file += ".6809"
                 arg_flag = True
             else:
-                if index != 0 and arg_flag is False:
+                if item[0] == "-":
+                    print("[ERROR] unknown option: " + item)
+                    sys.exit(1)
+                elif index != 0 and arg_flag is False:
                     # Handle any included .asm files
-                    if item[-3:] == "asm" or item[-4:] == "6809":
+                    _, file_ext = os.path.splitext(item)
+                    if file_ext in (".asm", ".6809"):
                         files.append(item)
                     else:
-                        print(item + " is not a .asm or .6809 file - ignoring")
-
-        if not files:
-            # By default get all the .asm files in the working directory
-            get_files()
-        else:
+                        print("[ERROR] File " + item + " is not a .asm or .6809 file")
+        if files:
             # Process any named files
             handle_files(files)
     else:
