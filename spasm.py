@@ -168,8 +168,8 @@ BSA = (
     "BRA", 0x20, 0x16,
     "BHI", 0x22, 0x1022,
     "BLS", 0x23, 0x1023,
-    "BHS", 0x24, 0x1024,
     "BCC", 0x24, 0x1024,
+    "BHS", 0x24, 0x1024,
     "BLO", 0x25, 0x1025,
     "BCS", 0x25, 0x1025,
     "BNE", 0x26, 0x1026,
@@ -1599,7 +1599,7 @@ def write_file(file_path=None):
     if file_path:
         # Build the dictionary and convert to JSON
         byte_str = ""
-        for i in range(0, len(code)): byte_str += chr(code[i])
+        for a_byte in code: byte_str += chr(a_byte)
         the_op = {"address": start_address, "code": byte_str}
         json_op = json.dumps(the_op, ensure_ascii=False)
 
@@ -1692,7 +1692,7 @@ if __name__ == '__main__':
                 if address[:2] == "0x": base = 16
                 try:
                     start_address = int(address, base)
-                except:
+                except ValueError:
                     print("[ERROR] -s / --start_address must be followed by a valid address")
                     sys.exit(1)
                 show_verbose("Code start address set to 0x{0:04X}".format(start_address))
