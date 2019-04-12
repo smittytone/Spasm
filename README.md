@@ -100,7 +100,7 @@ There are sample 6809 assembler programs and assembled `.6809` files in the [sam
 
 *spasm* is a command line tool. It supports the following switches:
 
-| Option | Alternative | Action |
+| Option | Alternative&nbsp;&nbsp;&nbsp;&nbsp; | Action |
 | :-: | :-- | :-- |
 | `-h` | `--help` | Print help information |
 | `-v` | `--verbose` | Display extra information during assembly. This is the default |
