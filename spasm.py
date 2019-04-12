@@ -794,87 +794,16 @@ def process_pseudo_op(line_parts, line):
     return result
 
 
-def get_reg_value(reg):
-    '''
-    Return the machine code for the specific register as used in TFR and EXG ops
-    Return value is a single-character hex string
-    '''
-
-    reg = reg.upper()
-    regs = ("D", "X", "Y", "U", "S", "PC", "A", "B", "CC", "DP")
-    vals = ("0", "1", "2", "3", "4", "5", "8", "9", "A", "B")
-    if reg in regs: return vals[regs.index(reg)]
-    return ""
-
-
-def get_pull_reg_value(reg):
-    '''
-    Return the value for the specific register as used in PUL and PSH ops
-    '''
-
-    reg = reg.upper()
-    regs = ("X", "Y", "U", "S", "PC", "A", "B", "CC", "DP", "D")
-    vals = (16, 32, 64, 64, 128, 2, 4, 1, 8, 6)
-    if reg in regs: return vals[regs.index(reg)]
-    return -1
-
-
-def get_int_value(num_str):
-    '''
-    Convert a prefixed string value to an integer.
-
-    Args:
-        num_str (str): The known numeric string.
-
-    Returns:
-        int: A positive integer value.
-    '''
-
-    value = 0
-    if num_str == "UNDEF":
-        value = 0
-    elif num_str[:2] == "0x":
-        # Hex value
-        value = int(num_str, 16)
-    elif num_str[0] == "@":
-        # A label value
-        label = labels[index_of_label(num_str)]
-        value = label["addr"]
-    elif num_str[0] == "%":
-        # Binary data
-        value = decode_binary(num_str[1:])
-    elif num_str[0] == "'":
-        # Ascii data in the next character
-        value = ord(num_str[1])
-    else:
-        value = int(num_str)
-    return value
-
-
-def decode_binary(bin_str):
-    '''
-    Decode the supplied binary value (as a string, eg. '0010010') to an integer.
-
-    Args:
-        bin_str (str): A string binary representation.
-
-    Returns:
-        int: The intger value.
-    '''
-
-    value = 0
-    for i in range(0, len(bin_str)):
-        bit = len(bin_str) - i - 1
-        if bin_str[bit] == "1": value += (2 ** i)
-    return value
-
-
 def decode_indexed(opnd, line):
     '''
     Decode the indexed addressing operand.
-    Parameters: 'opnd' is the operand string, 'data' is the line data object
-    Returns the operand value as a string (for the convenience of the calling function, decodeOpnd()
-    Returns an empty string if there was an error
+
+    Args:
+        opnd (str):        The extracted operand.
+        line (DecodeData): The decoded line data.
+
+    Returns:
+        str: The operand value as a string, or an empty string if there was an error.
     '''
 
     line.op_type = ADDR_MODE_INDEXED
@@ -985,6 +914,92 @@ def decode_indexed(opnd, line):
     # Return the operand value as a string
     opnd_value += reg
     return str(opnd_value)
+
+
+def get_reg_value(reg):
+    '''
+    Return the machine code for the specific register as used in TFR and EXG ops.
+
+    Args:
+        reg (str): The register name.
+
+    Returns:
+        str: Single-character hex string
+    '''
+
+    reg = reg.upper()
+    regs = ("D", "X", "Y", "U", "S", "PC", "A", "B", "CC", "DP")
+    vals = ("0", "1", "2", "3", "4", "5", "8", "9", "A", "B")
+    if reg in regs: return vals[regs.index(reg)]
+    return ""
+
+
+def get_pull_reg_value(reg):
+    '''
+    Return the value for the specific register as used in PUL and PSH ops.
+
+    Args:
+        reg (str): The register name.
+
+    Returns:
+        int: The register value.
+    '''
+
+    reg = reg.upper()
+    regs = ("X", "Y", "U", "S", "PC", "A", "B", "CC", "DP", "D")
+    vals = (16, 32, 64, 64, 128, 2, 4, 1, 8, 6)
+    if reg in regs: return vals[regs.index(reg)]
+    return -1
+
+
+def get_int_value(num_str):
+    '''
+    Convert a prefixed string value to an integer.
+
+    Args:
+        num_str (str): The known numeric string.
+
+    Returns:
+        int: A positive integer value.
+    '''
+
+    value = 0
+    if num_str == "UNDEF":
+        value = 0
+    elif num_str[:2] == "0x":
+        # Hex value
+        value = int(num_str, 16)
+    elif num_str[0] == "@":
+        # A label value
+        label = labels[index_of_label(num_str)]
+        value = label["addr"]
+    elif num_str[0] == "%":
+        # Binary data
+        value = decode_binary(num_str[1:])
+    elif num_str[0] == "'":
+        # Ascii data in the next character
+        value = ord(num_str[1])
+    else:
+        value = int(num_str)
+    return value
+
+
+def decode_binary(bin_str):
+    '''
+    Decode the supplied binary value (as a string, eg. '0010010') to an integer.
+
+    Args:
+        bin_str (str): A string binary representation.
+
+    Returns:
+        int: The intger value.
+    '''
+
+    value = 0
+    for i in range(0, len(bin_str)):
+        bit = len(bin_str) - i - 1
+        if bin_str[bit] == "1": value += (2 ** i)
+    return value
 
 
 def index_of_label(label_name):
@@ -1204,7 +1219,10 @@ def show_verbose(message):
 
 def disassemble_file(file_path):
     '''
-    Disassemble the .6809 file at 'path'
+    Disassemble the specified .6809 file.
+
+    Args:
+        file_path (str): The path to the .6809 file.
     '''
 
     file_data = None
@@ -1475,7 +1493,7 @@ def get_indexed_reg(byte_value):
 def get_tfr_exg_regs(byte_value):
     '''
     Generic TFR/EXG operand string generator, converting a post-op byte value
-    into disassembled output, eg. "A,B"
+    into disassembled output, eg. "A,B".
 
     Args:
         byte_value (int): The post-op byte value.
@@ -1520,7 +1538,7 @@ def get_pulu_pshu_regs(byte_value):
     return get_pul_psh_regs(byte_value, ("CC", "A", "B", "DP", "X", "Y", "S", "PC"))
 
 
-def get_pul_psh_regs(byte_value, reg_list):
+def get_pul_psh_regs(byte_value, reg_tuple):
     '''
     Generic PUL/PSH operand string generator.
 
@@ -1536,7 +1554,7 @@ def get_pul_psh_regs(byte_value, reg_list):
     for i in range(0, 8):
         if byte_value & (2 ** i) > 0:
             # Bit is set, so add the register to the output string, 'os'
-            output += (reg_list[i] + ",")
+            output += (reg_tuple[i] + ",")
     # Remove the final comma
     if output: output = output[0:len(output) - 1]
 
@@ -1570,7 +1588,7 @@ def show_help():
     print(" ")
 
 
-def write_file(file_path):
+def write_file(file_path=None):
     '''
     Write the assembled bytes, if any, to a .6809 file.
 
@@ -1578,17 +1596,16 @@ def write_file(file_path):
         file_path (str): The path of the output file.
     '''
 
-    # Build the dictionary
-    byte_str = ""
-    for i in range(0, len(code)): byte_str += chr(code[i])
+    if file_path:
+        # Build the dictionary and convert to JSON
+        byte_str = ""
+        for i in range(0, len(code)): byte_str += chr(code[i])
+        the_op = {"address": start_address, "code": byte_str}
+        json_op = json.dumps(the_op, ensure_ascii=False)
 
-    # Convert to JSON
-    the_op = {"address": start_address, "code": byte_str}
-    json_op = json.dumps(the_op, ensure_ascii=False)
-
-    # Write out the file
-    with open(file_path, "w") as file: file.write(json_op)
-    print("File " + file_path + " written")
+        # Write out the file
+        with open(file_path, "w") as file: file.write(json_op)
+        print("File " + file_path + " written")
 
 
 def get_files():
