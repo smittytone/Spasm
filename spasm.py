@@ -190,7 +190,7 @@ BSA = (
 ##########################################################################
 
 verbose = True
-start_address = 0xF000
+start_address = 0x0000
 prog_count = 0
 pass_count = 0
 show_upper = 0
@@ -241,7 +241,7 @@ def assemble_file(file_path):
     # Clear the storage arrays
     lines = []
     labels = []
-    code = []
+    code = bytearray()
 
     # Check that the passed file is available to process
     if os.path.exists(file_path):
@@ -268,8 +268,8 @@ def assemble_file(file_path):
             result = parse_line(line, i)
             if result is False:
                 # Error in processing: print post
-                print(">>> " + line)
                 print("Processing error in line " + str(i + 1) + " -- halting assembly")
+                print(">>> " + line)
                 break_flag = True
                 # Break out of the line-by-line loop
                 break
@@ -378,7 +378,7 @@ def parse_line(line, line_number):
                 # Set the label address
                 label["addr"] = prog_count
                 # Output the label valuation
-                show_verbose("Label " + label["name"] + " set to 0x" + "{0:04X}".format(prog_count) + " (line " + str(line_number) + ")")
+                show_verbose("Label " + label["name"] + " set to 0x" + "{0:04X}".format(prog_count) + " (line " + str(line_number + 1) + ")")
         else:
             # Record the newly found label
             labels.append({"name": label, "addr": prog_count})
@@ -468,9 +468,14 @@ def decode_op(an_op, line):
 
 def decode_opnd(an_opnd, line):
     '''
-    This function decodes the operand
-    Parameters: 'opnd' is the operand string, 'data' is the line object
-    Returns an integer value or -1 if the operand value could not be determined
+    This function decodes the operand.
+
+    Args:
+        an_opnd (str): The extracted operand.
+        line  (LineData): An object representing the decoded line.
+
+    Returns
+        int: the operand value, or -1 if the operand value could not be determined
     '''
     global prog_count
 
@@ -479,8 +484,8 @@ def decode_opnd(an_opnd, line):
     op_name = ""
     line.op_type = ADDR_MODE_NONE
 
-    if len(line.op) > 1:
-        op_name = line.op[0]
+    if len(line.op) > 1: op_name = line.op[0]
+
     if op_name in ("EXG", "TFR"):
         # Register swap operation to calculate the special operand value
         # by looking at the named registers separated by a comma
@@ -549,11 +554,11 @@ def decode_opnd(an_opnd, line):
                     line.op_type = ADDR_MODE_IMMEDIATE
                     opnd_str = ""
                 else:
-                    if op_char == "$":
-                        # Convert value internally as hex
-                        op_char = "0x"
+                    # Convert value internally as hex
+                    if op_char == "$": op_char = "0x"
+
+                    # Operand could use indexed addressing or be a FCB/FDB value list
                     if op_char == ",":
-                        # Operand could use indexed addressing or be a FCB/FDB value list
                         if line.pseudo_op_type == 0:
                             # It's an indexed addressing operand, so decode it
                             opnd_str = decode_indexed(an_opnd, line)
@@ -561,19 +566,8 @@ def decode_opnd(an_opnd, line):
                                 error_message(8, line.line_number) # Bad operand
                                 return -1
                             break
-                    if op_char != " ":
-                        # Remove spaces
-                        opnd_str += op_char
-
-    # NOTE This statement may be redundant, and should be part of 'decode_indexed()' anyway
-    if opnd_str and opnd_str[0] == "(":
-        # Extended indirect addressing
-        line.op_type = ADDR_MODE_INDEXED
-        opnd_str = opnd_str[1:-1]
-        opnd_value = 0x9F
-        line.index_address = get_int_value(opnd_str)
-        line.index_addressing_flag = True
-        line.indirect_flag = True
+                    # Remove spaces and re-assemble string
+                    if op_char != " ": opnd_str += op_char
 
     if opnd_str and opnd_str[0] == "@":
         # Operand is a label
@@ -591,25 +585,26 @@ def decode_opnd(an_opnd, line):
             opnd_str = "UNDEF"
         else:
             label = labels[index]
-            opnd_str = str(label["addr"])
+            opnd_value = label["addr"]
+            opnd_str = str(opnd_value)
 
     if not opnd_str:
         # No operand found, so this must be an Inherent Addressing op
         line.op_type = ADDR_MODE_INHERENT
     else:
         if line.pseudo_op_type in (3, 4):
-            # FCB/FDB - check for lists
+            # FCB/FDB - check for value lists
             parts = opnd_str.split(",")
             if len(parts) > 1:
+                # We have a list of values. Convert them to hex bytes for internal processing
                 byte_string = ""
-                format_str = "{0:02X}"
-                if line.pseudo_op_type == 4: format_str = "{0:04X}"
-                for i in range(0, len(parts)):
-                    value = get_int_value(parts[i])
+                format_str = "{0:02X}" if line.pseudo_op_type == 2 else "{0:04X}"
+                for part in parts:
+                    value = get_int_value(parts)
                     byte_string += format_str.format(value)
                 # Preserve the byte string for later then bail
                 line.pseudo_op_value = byte_string
-                return 0
+                opnd_value = 0
             # Not a list, so just get the value of the operand
             opnd_value = get_int_value(opnd_str)
         elif line.indirect_flag is False:
@@ -648,148 +643,153 @@ def decode_opnd(an_opnd, line):
     return opnd_value
 
 
-def write_code(line_parts, line):
+def process_pseudo_op(line_parts, line):
     '''
-    Write out the machine code and, on the second pass, print out the listing.
+    Process assembler pseudo-ops, ie. directives with specific assembler-level functionality.
 
     Args:
         line_parts (list):       The program components of the current line (see 'parse_line()').
         line       (DecodeData): The decoded line data.
 
     Returns:
-        bool: False in the instance of an error, otherwise True.
+        bool: False if an error occurred, or True.
     '''
-    global prog_count
 
-    # Set up a place to store the line's machine code output
-    byte_str = ""
+    global prog_count, start_address
 
-    if len(line.op) > 1:
-        if line.branch_op_type > 0: line.op_type = line.branch_op_type
+    result = False
+    label_name = line_parts[0]
+    opnd_value = line.opnd
 
-        # Get the machine code for the op
-        op_value = line.op[line.op_type - 10 if line.op_type > 10 else line.op_type]
+    if line.pseudo_op_type == 1:
+        # EQU: assign the operand value to the label declared immediately
+        # before the EQU op
+        if pass_count == 1:
+            idx = index_of_label(label_name)
+            label = labels[idx]
+            label["addr"] = opnd_value
+            show_verbose("Label " + label_name + " set to 0x" + "{0:04X}".format(opnd_value) + " (line " + str(line.line_number + 1) + ")")
+        result = write_code(line_parts, line)
 
-        if op_value == -1:
-            error_message(6, line.line_number) # Bad opcode
-            return False
+    if line.pseudo_op_type == 2:
+        # RMB: Reserve the next 'opnd_value' bytes and set the label to the current
+        # value of the programme counter
+        idx = index_of_label(label_name)
+        if idx != -1:
+            label = labels[idx]
+            label["addr"] = prog_count
 
-        # Poke in the opcode
-        if op_value < 256:
-            poke(prog_count, op_value)
-            prog_count += 1
-            if pass_count == 2: byte_str += "{0:02X}".format(op_value)
-        if op_value > 255:
-            lsb = op_value & 0xFF
-            msb = (op_value & 0xFF00) >> 8
-            poke(prog_count, msb)
-            prog_count += 1
-            poke(prog_count, lsb)
-            prog_count += 1
-            if pass_count == 2: byte_str += ("{0:02X}".format(msb) + "{0:02X}".format(lsb))
+        if verbose is True and pass_count == 1:
+            print(str(opnd_value) + " bytes reserved at address 0x" + "{0:04X}".format(prog_count) + " (line " + str(line.line_number + 1) + ")")
 
-        if line.branch_op_type == BRANCH_MODE_LONG: line.op_type = ADDR_MODE_EXTENDED
-        if line.branch_op_type == BRANCH_MODE_SHORT: line.op_type = ADDR_MODE_DIRECT
+        for i in range(prog_count, prog_count + opnd_value): poke(i, 0x12)
+        result = write_code(line_parts, line)
+        prog_count += opnd_value
 
-        if line.op_type == ADDR_MODE_IMMEDIATE:
-            # Immediate addressing
-            # Get last character of opcode
-            an_op = line.op[0]
-            an_op = an_op[-1]
-            if an_op in ("D", "X", "Y", "S", "U"): line.op_type = ADDR_MODE_EXTENDED
-        if line.op_type == ADDR_MODE_IMMEDIATE_SPECIAL:
-            # Immediate addressing: TFR/EXG OR PUL/PSH
-            poke(prog_count, int(line.opnd))
-            prog_count += 1
-            if pass_count == 2: byte_str += "{0:02X}".format(line.opnd)
-        if line.op_type == ADDR_MODE_INHERENT:
-            # Inherent addressing
-            line.op_type = ADDR_MODE_NONE
-        if line.index_addressing_flag is True:
-            poke(prog_count, line.opnd)
-            if pass_count == 2: byte_str += "{0:02X}".format(line.opnd)
-            prog_count += 1
-            if line.index_address != -1:
-                line.opnd = line.index_address
-                if line.opnd > 127 or line.opnd < -128:
-                    # Do 16-bit address
-                    line.op_type = ADDR_MODE_EXTENDED
-                elif line.opnd > 127 or line.opnd < -128:
-                    # Do 16-bit address
-                    line.op_type = ADDR_MODE_INDEXED
-            else:
-                line.op_type = ADDR_MODE_NONE
-        if line.op_type > ADDR_MODE_NONE and line.op_type < ADDR_MODE_EXTENDED:
-            # Immediate, direct and indexed addressing
-            poke(prog_count, line.opnd)
-            prog_count += 1
-            if pass_count == 2: byte_str += "{0:02X}".format(line.opnd)
-        if line.op_type == ADDR_MODE_EXTENDED:
-            # Extended addressing
-            lsb = line.opnd & 0xFF
-            msb = (line.opnd & 0xFF00) >> 8
-            poke(prog_count, msb)
-            prog_count += 1
-            poke(prog_count, lsb)
-            prog_count += 1
-            if pass_count == 2: byte_str += ("{0:02X}".format(msb) + "{0:02X}".format(lsb))
+    if line.pseudo_op_type == 3:
+        # FCB: Pokes 'opnd_value' into the current byte and sets the label to the
+        # address of that byte. 'opnd_value' must be an 8-bit value
+        idx = index_of_label(label_name)
+        if idx != -1:
+            label = labels[idx]
+            label["addr"] = prog_count
 
-    if pass_count == 2:
-        # Display the line on pass 2
-        # Determine the length of the longest label
-        label_len = 6
-        if labels:
-            for label in labels:
-                if label_len < len(label["name"]): label_len = len(label["name"])
+        if line.pseudo_op_value:
+            # Multiple bytes to poke in, in the form of a hex string
+            # This is set in 'decode_opnd'
+            count = 0
 
-        if line.line_number == 0:
-            # Print the header on the first line
-            print("Address   Bytes       Label" + SPACES[:(label_len - 5)] + "   Op.      Data")
-            print("-----------------------------------------------")
+            for i in range(0, len(line.pseudo_op_value), 2):
+                byte = line.pseudo_op_value[i:i+2]
+                if i == 0:
+                    line.opnd = int(byte)
+                    result = write_code(line_parts, line)
+                elif pass_count == 2: print("0x{0:04X}".format(prog_count) + "    " + byte)
+                poke(prog_count, int(byte, 16))
+                prog_count += 1
+                count += 1
 
-        # Handle comment-only lines
-        if line.comment_tab > 0:
-            print(SPACES[:55] + line_parts[0])
-            return True
-
-        if line.pseudo_op_type == 3: byte_str += "{0:02X}".format(line.opnd)
-        if line.pseudo_op_type == 4: byte_str += "{0:04X}".format(line.opnd)
-
-        # First, add the 16-bit address
-        if byte_str:
-            # Display the address at the start of the op's first byte
-            display_str = "0x{0:04X}".format(prog_count - int(len(byte_str) / 2)) + "    "
-        elif line.pseudo_op_type > 0:
-            # Display the address at the start of the pseudoop's first byte
-            # NOTE most pseudo ops have no byteString, hence this separate entry
-            display_str = "0x{0:04X}".format(prog_count) + "    "
+            if verbose is True and pass_count == 1:
+                print(str(count) + " bytes written at 0x" + "{0:04X}".format(prog_count - count) + " (line " + str(line.line_number + 1) + ")")
         else:
-            # Display no address for any other line, eg. comment-only lines
-            display_str = "          "
+            # Only a single byte to drop in
+            # This is set in 'decode_opnd'
+            opnd_value = opnd_value & 0xFF
+            poke(prog_count, opnd_value)
 
-        # Add the lines assembled machine code
-        display_str += (byte_str + SPACES[:(10 - len(byte_str))] + "  ")
+            if verbose is True and pass_count == 1:
+                print("The byte at 0x" + "{0:04X}".format(prog_count) + " set to 0x" + "{0:02X}".format(opnd_value) + " (line " + str(line.line_number + 1) + ")")
 
-        # Add the label name - or spaces in its place
-        display_str += (line_parts[0] + SPACES[:(label_len - len(line_parts[0]))] + "   ")
+            result = write_code(line_parts, line)
+            prog_count += 1
 
-        # Add the op
-        op_str = line_parts[1]
-        if show_upper == 1:
-            op_str = op_str.upper()
-        elif show_upper == 2:
-            op_str = op_str.lower()
-        display_str += (op_str + SPACES[:(5 - len(line_parts[1]))] + "    ")
+    if line.pseudo_op_type == 4:
+        # FDB: Pokes the MSB of 'opnd_value' into the current byte and the LSB into
+        # the next byte and sets the label to the address of the first byte.
+        idx = index_of_label(label_name)
+        if idx != -1:
+            label = labels[idx]
+            label["addr"] = prog_count
 
-        # Add the operand
-        if len(line_parts) > 2: display_str += line_parts[2]
+        if line.pseudo_op_value:
+            # Multiple bytes to poke in, in the form of a hex string
+            # This is set in 'decode_opnd'
+            count = 0
+            initial = 0
+            byte_str = ""
 
-        # Add the comment, if there is one
-        if len(line_parts) > 3: display_str += (SPACES[:(55 - len(display_str))] + line_parts[3])
+            for i in range(0, len(line.pseudo_op_value), 2):
+                byte = line.pseudo_op_value[i:i+2]
+                byte_str += byte
+                count += 1
+                if i == 0:
+                    initial = int(byte, 16) << 8
+                elif i == 2:
+                    initial += int(byte, 16)
+                    line.opnd = initial
+                    result = write_code(line_parts, line)
+                    byte_str = ""
+                elif pass_count == 2 and count % 2 == 0:
+                    print("0x{0:04X}".format(prog_count - 2) + "    " + byte_str)
+                    byte_str = ""
 
-        # And output the line
-        print(display_str)
-    return True
+                poke(prog_count, int(byte, 16))
+                prog_count += 1
+
+            if verbose is True and pass_count == 1:
+                print(str(count) + " bytes written at 0x" + "{0:04X}".format(prog_count - count) + " (line " + str(line.line_number + 1) + ")")
+        else:
+            # Only a single 16-bit value to drop in
+            # This is set in 'decode_opnd'
+            opnd_value = opnd_value & 0xFFFF
+            lsb = opnd_value & 0xFF
+            msb = (opnd_value & 0xFF00) >> 8
+            if verbose is True and pass_count == 1:
+                print("The two bytes at 0x" + "{0:04X}".format(prog_count) + " set to 0x" + "{0:04X}".format(opnd_value) + " (line " + str(line.line_number + 1) + ")")
+            result = write_code(line_parts, line)
+            poke(prog_count, msb)
+            poke(prog_count + 1, lsb)
+            prog_count += 2
+
+    if line.pseudo_op_type == 5:
+        # END: The end of the program. This is optional, and currently does nothing
+        result = write_code(line_parts, line)
+
+    if line.pseudo_op_type == 6:
+        # ORG: set or reset the origin
+        if pass_count == 1 and verbose is True:
+            print("Origin set to " + "0x{0:04X}".format(opnd_value) + " (line " + str(line.line_number + 1) + ")")
+        if prog_count == start_address: start_address = opnd_value
+        prog_count = opnd_value
+        result = write_code(line_parts, line)
+        if label_name:
+            idx = index_of_label(label_name)
+            label = labels[idx]
+            label["addr"] = opnd_value
+            if pass_count == 1 and verbose is True:
+                print("Label " + label["name"] + " set to 0x" + "{0:04X}".format(opnd_value) + " (line " + str(line.line_number + 1) + ")")
+
+    return result
 
 
 def get_reg_value(reg):
@@ -985,132 +985,6 @@ def decode_indexed(opnd, line):
     return str(opnd_value)
 
 
-def process_pseudo_op(line_parts, line):
-    '''
-    Process assembler pseudo-ops, ie. directives with specific assembler-level functionality.
-
-    Args:
-        line_parts (list):       The program components of the current line (see 'parse_line()').
-        line       (DecodeData): The decoded line data.
-
-    Returns:
-        bool: False if an error occurred, or True.
-    '''
-
-    global prog_count
-
-    result = False
-    label_name = line_parts[0]
-    opnd_value = line.opnd
-
-    if line.pseudo_op_type == 1:
-        # EQU: assign the operand value to the label declared immediately
-        # before the EQU op
-        if pass_count == 1:
-            idx = index_of_label(label_name)
-            label = labels[idx]
-            label["addr"] = opnd_value
-            show_verbose("Label " + label_name + " set to 0x" + "{0:04X}".format(opnd_value) + " (line " + str(line.line_number) + ")")
-        result = write_code(line_parts, line)
-
-    if line.pseudo_op_type == 2:
-        # RMB: Reserve the next 'opnd_value' bytes and set the label to the current
-        # value of the programme counter
-        idx = index_of_label(label_name)
-        label = labels[idx]
-        label["addr"] = prog_count
-        if verbose is True and pass_count == 1:
-            print(str(opnd_value) + " bytes reserved at address 0x" + "{0:04X}".format(prog_count) + " (line " + str(line.line_number) + ")")
-        for i in range(prog_count, prog_count + opnd_value): poke(i, 0x12)
-        result = write_code(line_parts, line)
-        prog_count += opnd_value
-
-    if line.pseudo_op_type == 3:
-        # FCB: Pokes 'opnd_value' into the current byte and sets the label to the
-        # address of that byte. 'opnd_value' must be an 8-bit value
-        idx = index_of_label(label_name)
-        label = labels[idx]
-        label["addr"] = prog_count
-
-        if line.pseudo_op_value:
-            # Multiple bytes to poke in, in the form of a hex string
-            result = write_code(line_parts, line)
-            count = 0
-
-            for i in range(0, len(line.pseudo_op_value), 2):
-                byte = line.pseudo_op_value[i:i+2]
-                poke(prog_count, int(byte, 16))
-                if pass_count == 2: print("0x{0:04X}".format(prog_count) + "    " + byte)
-                prog_count += 1
-                count += 1
-
-            if verbose is True and pass_count == 1:
-                print(str(count) + " bytes written at 0x" + "{0:04X}".format(prog_count - count) + " (line " + str(line.line_number) + ")")
-        else:
-            # Only a single byte to drop in
-            opnd_value = opnd_value & 0xFF
-            poke(prog_count, opnd_value)
-
-            if verbose is True and pass_count == 1:
-                print("The byte at 0x" + "{0:04X}".format(prog_count) + " set to 0x" + "{0:02X}".format(opnd_value) + " (line " + str(line.line_number) + ")")
-
-            result = write_code(line_parts, line)
-            prog_count += 1
-
-    if line.pseudo_op_type == 4:
-        # FDB: Pokes the MSB of 'opnd_value' into the current byte and the LSB into
-        # the next byte and sets the label to the address of the first byte.
-        idx = index_of_label(label_name)
-        label = labels[idx]
-        label["addr"] = prog_count
-
-        if line.pseudo_op_value:
-            # Multiple bytes to poke in, in the form of a hex string
-            result = write_code(line_parts, line)
-            count = 0
-            byte_str = ""
-
-            for i in range(0, len(line.pseudo_op_value), 2):
-                byte = line.pseudo_op_value[i:i+2]
-                byte_str += byte
-                poke(prog_count, int(byte, 16))
-                count += 1
-
-                if pass_count == 2 and count % 2 == 0:
-                    print("0x{0:04X}".format(prog_count - 2) + "    " + byte_str)
-                    byte_str = ""
-
-                prog_count += 1
-
-            if verbose is True and pass_count == 1:
-                print(str(count) + " bytes written at 0x" + "{0:04X}".format(prog_count - count) + " (line " + str(line.line_number) + ")")
-        else:
-            # Only a single 16-bit value to drop in
-            opnd_value = opnd_value & 0xFFFF
-            lsb = opnd_value & 0xFF
-            msb = (opnd_value & 0xFF00) >> 8
-            if verbose is True and pass_count == 1:
-                print("The two bytes at 0x" + "{0:04X}".format(prog_count) + " set to 0x" + "{0:04X}".format(opnd_value) + " (line " + str(line.line_number) + ")")
-            result = write_code(line_parts, line)
-            poke(prog_count, msb)
-            prog_count += 1
-            poke(prog_count, lsb)
-            prog_count += 1
-
-    if line.pseudo_op_type == 5:
-        # END: The end of the program. This is optional, and currently does nothing
-        result = write_code(line_parts, line)
-
-    if line.pseudo_op_type == 6:
-        # ORG: set or reset the origin, ie. the value of 'start_address'
-        if pass_count == 1 and verbose is True:
-            print("Origin set to " + "0x{0:04X}".format(opnd_value) + " (line " + str(line.line_number) + ")")
-        prog_count = opnd_value
-        result = write_code(line_parts, line)
-
-    return result
-
-
 def index_of_label(label_name):
     '''
     See if we have already encountered 'label_name' in the listing.
@@ -1131,6 +1005,149 @@ def index_of_label(label_name):
     return -1
 
 
+def write_code(line_parts, line):
+    '''
+    Write out the machine code and, on the second pass, print out the listing.
+
+    Args:
+        line_parts (list):       The program components of the current line (see 'parse_line()').
+        line       (DecodeData): The decoded line data.
+
+    Returns:
+        bool: False in the instance of an error, otherwise True.
+    '''
+    global prog_count
+
+    # Set up a place to store the line's machine code output
+    byte_str = ""
+
+    if len(line.op) > 1:
+        if line.branch_op_type > 0: line.op_type = line.branch_op_type
+
+        # Get the machine code for the op
+        op_value = line.op[line.op_type - 10 if line.op_type > 10 else line.op_type]
+
+        if op_value == -1:
+            error_message(6, line.line_number) # Bad opcode
+            return False
+
+        # Poke in the opcode
+        if op_value < 256:
+            poke(prog_count, op_value)
+            prog_count += 1
+            if pass_count == 2: byte_str += "{0:02X}".format(op_value)
+        if op_value > 255:
+            lsb = op_value & 0xFF
+            msb = (op_value & 0xFF00) >> 8
+            poke(prog_count, msb)
+            prog_count += 1
+            poke(prog_count, lsb)
+            prog_count += 1
+            if pass_count == 2: byte_str += ("{0:02X}".format(msb) + "{0:02X}".format(lsb))
+
+        if line.branch_op_type == BRANCH_MODE_LONG: line.op_type = ADDR_MODE_EXTENDED
+        if line.branch_op_type == BRANCH_MODE_SHORT: line.op_type = ADDR_MODE_DIRECT
+
+        if line.op_type == ADDR_MODE_IMMEDIATE:
+            # Immediate addressing
+            # Get last character of opcode
+            an_op = line.op[0]
+            an_op = an_op[-1]
+            if an_op in ("D", "X", "Y", "S", "U"): line.op_type = ADDR_MODE_EXTENDED
+        if line.op_type == ADDR_MODE_IMMEDIATE_SPECIAL:
+            # Immediate addressing: TFR/EXG OR PUL/PSH
+            poke(prog_count, int(line.opnd))
+            prog_count += 1
+            if pass_count == 2: byte_str += "{0:02X}".format(line.opnd)
+        if line.op_type == ADDR_MODE_INHERENT:
+            # Inherent addressing
+            line.op_type = ADDR_MODE_NONE
+        if line.index_addressing_flag is True:
+            poke(prog_count, line.opnd)
+            if pass_count == 2: byte_str += "{0:02X}".format(line.opnd)
+            prog_count += 1
+            if line.index_address != -1:
+                line.opnd = line.index_address
+                if line.opnd > 127 or line.opnd < -128:
+                    # Do 16-bit address
+                    line.op_type = ADDR_MODE_EXTENDED
+                elif line.opnd > 127 or line.opnd < -128:
+                    # Do 16-bit address
+                    line.op_type = ADDR_MODE_INDEXED
+            else:
+                line.op_type = ADDR_MODE_NONE
+        if line.op_type > ADDR_MODE_NONE and line.op_type < ADDR_MODE_EXTENDED:
+            # Immediate, direct and indexed addressing
+            poke(prog_count, line.opnd)
+            prog_count += 1
+            if pass_count == 2: byte_str += "{0:02X}".format(line.opnd)
+        if line.op_type == ADDR_MODE_EXTENDED:
+            # Extended addressing
+            lsb = line.opnd & 0xFF
+            msb = (line.opnd & 0xFF00) >> 8
+            poke(prog_count, msb)
+            poke(prog_count + 1, lsb)
+            prog_count += 2
+            if pass_count == 2: byte_str += ("{0:02X}".format(msb) + "{0:02X}".format(lsb))
+
+    if pass_count == 2:
+        # Display the line on pass 2
+        # Determine the length of the longest label
+        label_len = 6
+        if labels:
+            for label in labels:
+                if label_len < len(label["name"]): label_len = len(label["name"])
+
+        if line.line_number == 0:
+            # Print the header on the first line
+            print("Address   Bytes       Label" + SPACES[:(label_len - 5)] + "   Op.      Data")
+            print("-----------------------------------------------")
+
+        # Handle comment-only lines
+        if line.comment_tab > 0:
+            print(SPACES[:55] + line_parts[0])
+            return True
+
+        # First, add the 16-bit address
+        if byte_str:
+            # Display the address at the start of the op's first byte
+            display_str = "0x{0:04X}".format(prog_count - int(len(byte_str) / 2)) + "    "
+        elif line.pseudo_op_type > 0:
+            # Display the address at the start of the pseudoop's first byte
+            # NOTE most pseudo ops have no byteString, hence this separate entry
+            display_str = "0x{0:04X}".format(prog_count) + "    "
+            if line.pseudo_op_type == 3: byte_str = "{0:02X}".format(line.opnd)
+            if line.pseudo_op_type == 4: byte_str = "{0:04X}".format(line.opnd)
+            if line.pseudo_op_type == 6: display_str = "          "
+        else:
+            # Display no address for any other line, eg. comment-only lines
+            display_str = "          "
+
+        # Add the lines assembled machine code
+        display_str += (byte_str + SPACES[:(10 - len(byte_str))] + "  ")
+
+        # Add the label name - or spaces in its place
+        display_str += (line_parts[0] + SPACES[:(label_len - len(line_parts[0]))] + "   ")
+
+        # Add the op
+        op_str = line_parts[1]
+        if show_upper == 1:
+            op_str = op_str.upper()
+        elif show_upper == 2:
+            op_str = op_str.lower()
+        display_str += (op_str + SPACES[:(5 - len(line_parts[1]))] + "    ")
+
+        # Add the operand
+        if len(line_parts) > 2: display_str += line_parts[2]
+
+        # Add the comment, if there is one
+        if len(line_parts) > 3: display_str += (SPACES[:(55 - len(display_str))] + line_parts[3])
+
+        # And output the line
+        print(display_str)
+    return True
+
+
 def poke(address, value):
     '''
     Add new byte values to the machine code storage.
@@ -1139,7 +1156,6 @@ def poke(address, value):
         address (int): A 16-bit address in the store.
         value   (int): An 8-bit value to add to the store.
     '''
-
     if address - start_address > len(code) - 1:
         end_address = address - start_address - len(code)
         if end_address > 1:
