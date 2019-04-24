@@ -1601,23 +1601,30 @@ def show_help():
     '''
 
     print(" ")
-    print("DASM is an assembler/disassembler for the 8-bit Motorola 6809 chip family.")
+    print("SPASM is an assembler/disassembler for the 8-bit Motorola 6809 chip family.")
+    print(" ")
     print("Place one or more '*.asm' files in this directory and just call the tool,")
     print("or assemble specific files by providing them as arguments.")
     print(" ")
+    print("Place one or more '*.6809' or '.rom' files in this directory and call the tool,")
+    print("or disassemble specific files by providing them as arguments.")
+    print(" ")
     print("Options:")
-    print(" -h / --help    - print help information")
-    print(" -v / --verbose - display extra information during assembly")
-    print(" -q / --quiet   - display no extra information during assembly")
-    print("                  NOTE always overrides -v / -- verbose")
-    print(" -s / --start   - Set the start address of the assembled code,")
-    print("                  specified as a hex or decimal value")
-    print(" -o / --output  - Name the output file")
-    print(" -l / --lower   - Display opcodes in lowercase")
-    print(" -u / --upper   - Display opcodes in uppercase")
-    print("                  NOTE the above two switch will overwrite each other")
-    print("                       if both are called: the last one wins. If neither")
-    print("                       is used, the output matches the input")
+    print(" -h / --help         - print help information.")
+    print(" -v / --verbose      - display extra information during assembly.")
+    print(" -q / --quiet        - display no extra information during assembly.")
+    print("                       NOTE always overrides -v / -- verbose.")
+    print(" -s / --startaddress - Set the start address of the (dis)assembled code,")
+    print("                       specified as a hex or decimal value.")
+    print(" -b / --baseaddress  - Set the base address of disassembled code,")
+    print("                       specified as a hex or decimal value.")
+    print(" -n / --numbytes     - The number of bytes to disassemble.")
+    print(" -o / --output       - Name an output file for assembled code.")
+    print(" -l / --lower        - Display opcodes in lowercase.")
+    print(" -u / --upper        - Display opcodes in uppercase.")
+    print("                       NOTE the above two switch will overwrite each other")
+    print("                            if both are called: the last one wins. If neither")
+    print("                            is used, the output matches the input.")
     print(" ")
 
 
@@ -1727,7 +1734,7 @@ if __name__ == '__main__':
                 try:
                     start_address = int(address, base)
                 except ValueError:
-                    print("[ERROR] -s / --start_address must be followed by a valid address")
+                    print("[ERROR] -s / --startaddress must be followed by a valid address")
                     sys.exit(1)
                 show_verbose("Code start address set to 0x{0:04X}".format(start_address))
                 arg_flag = True
@@ -1764,7 +1771,7 @@ if __name__ == '__main__':
                     sys.exit(1)
                 show_verbose("Number of disassembly bytes set to " + str(num_bytes))
                 arg_flag = True
-            elif item in ("-b", "--baseaddress"):
+            elif item in ("-b", "--base"):
                 # Handle the -b / --baseaddress switch
                 if index + 1 >= len(sys.argv):
                     print("[ERROR] -b / --baseaddress must be followed by an address")
