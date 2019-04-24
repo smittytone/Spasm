@@ -4,7 +4,7 @@
 'SPASM' -- Smittytone's Primary 6809 ASeMmbler
 
 Version:
-    1.0.0
+    1.0.1
 
 Copyright:
     2019, Tony Smith (@smittytone)
@@ -1222,25 +1222,31 @@ def show_verbose(message):
     if verbose is True: print(message)
 
 
-def disassemble_file(file_path):
+def disassemble_file(file_spec):
     '''
-    Disassemble the specified .6809 file.
+    Disassemble the specified .6809 or .rom file.
 
     Args:
-        file_path (str): The path to the .6809 file.
+        file_path (str): The path to the file.
     '''
 
     file_data = None
+    file_path = file_spec[0]
     if os.path.exists(file_path) is True:
-        with open(file_path, "r") as file: file_data = file.read()
+        with open(file_path, "r", errors='ignore') as file: file_data = file.read()
     else:
         print("[ERROR] File " + file_path + " does not exist, skipping")
 
     if file_data is not None:
         # Prep the disassembly
-        data = json.loads(file_data)
-        code = data["code"]
-        address = data["address"]
+        if file_spec[1] is True:
+            data = json.loads(file_data)
+            code = data["code"]
+            address = data["address"]
+        else:
+            code  = file_data
+            address = 32768
+
         post_op_bytes = 0
         opnd = 0
         special_opnd = 0
@@ -1310,8 +1316,8 @@ def disassemble_file(file_path):
 
                 # If we still haven't matched the op, print a warning and bail
                 if found is False:
-                    print("Bad Op: " + "{0:02X}".format(next_byte))
-                    return
+                    print("Bad Op: " + "${0:02X}".format(next_byte))
+
 
                 # Set the initial part of the output line
                 line_str = "0x{0:04X}".format(address) + "    " + the_op + "   "
@@ -1628,7 +1634,7 @@ def get_files():
     for file in files:
         _, file_ext = os.path.splitext(file)
         if file_ext == ".asm": asm_files.append(file)
-        if file_ext == ".6809": dis_files.append(file)
+        if file_ext in (".6809", ".rom"): dis_files.append(file)
 
     asm_count = len(asm_files)
     if asm_count == 1:
@@ -1652,16 +1658,17 @@ def get_files():
 
 def handle_files(the_files=None):
     '''
-    Pass on all supplied '.asm' files on for assembly, '.6809' files for disassembly.
+    Pass on all supplied '.asm' files on for assembly, '.6809' or '.rom' files for disassembly.
 
     Args:
-        the_files (list): The .asm or .6809 files.
+        the_files (list): The .asm, .rom or .6809 files.
     '''
 
     if the_files:
         for file in the_files:
-            if file[-1:] == "m": assemble_file(file)
-            if file[-1:] == "9": disassemble_file(file)
+            if file[-2:] == "sm": assemble_file(file)
+            if file[-1:] == "9": disassemble_file((file, True))
+            if file[-2:] == "om": disassemble_file((file, False))
 
 
 if __name__ == '__main__':
@@ -1724,12 +1731,12 @@ if __name__ == '__main__':
                     print("[ERROR] unknown option: " + item)
                     sys.exit(1)
                 elif index != 0 and arg_flag is False:
-                    # Handle any included .asm files
+                    # Handle any included .asm, .6809 or .rom files
                     _, file_ext = os.path.splitext(item)
-                    if file_ext in (".asm", ".6809"):
+                    if file_ext in (".asm", ".6809", ".rom"):
                         files.append(item)
                     else:
-                        print("[ERROR] File " + item + " is not a .asm or .6809 file")
+                        print("[ERROR] File " + item + " is not a .asm, .6809 or .rom file")
         if files:
             # Process any named files
             handle_files(files)
