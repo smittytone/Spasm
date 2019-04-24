@@ -1,4 +1,4 @@
-# SPASM ‘Smittytone’s Primary 6809 ASeMbler’ 1.0.0 #
+# SPASM ‘Smittytone’s Primary 6809 ASeMbler’ 1.1.0 #
 
 *spasm* is an assembler/disassembler for the Motorola 6809 microprocessor written in Python 3.
 
@@ -106,12 +106,18 @@ There are sample 6809 assembler programs and assembled `.6809` files in the [sam
 | `-v` | `--verbose` | Display extra information during assembly. This is the default |
 | `-q` | `--quiet` | Display no extra information during assembly. This always overrides verbose mode |
 | `-s` | `--start` | Set the start address of the assembled code, specified as a hex or decimal value.<br />**Note** You can use $ as a prefix for a hex value, but you will need to place the address in single quotes, eg. `spasm.py zzz.asm -s '$FF00'` to avoid confusing Bash |
+| `-b` | `--baseaddress` | Set the base address for disassembled code, specified as a hex or decimal value. Ignored during assembly |
+| `-n` | `--numbytes` | Set the number of bytes to disassemble, specified as a hex or decimal value. Ignored during assembly |
 | `-o` | `--output` | Cause the 6809 output file to be written and, optionally, name it. If you pass no name, the output file name will match the input file |
 | `-l` | `--lower` | Display opcodes in lowercase |
 | `-u` | `--upper` | Display opcodes in uppercase.<br />**Note** This and the above switch will overwrite each other; if both are called: the last one wins. If neither is used, the output matches the input |
 
 ## Release Notes ##
 
+- 1.1.0 &mdash; *unreleased*
+    - Add disassembly of `.rom` files.
+    - Add `-n` switch to set number of bytes of code to be disassembled.
+    - Add `-b` switch to set base address of disassembly.
 - 1.0.0 &mdash; *12 April 2019*
     - Initial public release.
 
