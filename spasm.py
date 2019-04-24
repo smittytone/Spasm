@@ -4,7 +4,7 @@
 'SPASM' -- Smittytone's Primary 6809 ASeMmbler
 
 Version:
-    1.0.1
+    1.1.0
 
 Copyright:
     2019, Tony Smith (@smittytone)
@@ -194,6 +194,8 @@ start_address = 0x0000
 prog_count = 0
 pass_count = 0
 show_upper = 0
+base_address = 0x0000
+num_bytes = 256
 labels = None
 code = None
 out_file = None
@@ -1227,26 +1229,38 @@ def disassemble_file(file_spec):
     Disassemble the specified .6809 or .rom file.
 
     Args:
-        file_path (str): The path to the file.
+        file_spec (str, bool): The path and the type of the file (True = .6809, False = .rom).
     '''
 
     file_data = None
     file_path = file_spec[0]
-    if os.path.exists(file_path) is True:
-        with open(file_path, "r", errors='ignore') as file: file_data = file.read()
-    else:
+    file_type = file_spec[1]
+
+    if os.path.exists(file_path) is False:
         print("[ERROR] File " + file_path + " does not exist, skipping")
+        return
 
-    if file_data is not None:
+    if file_type is True:
+        # This is a .6809 file, ie. a text representation of JSON, with
+        # the code set to key 'code' and the start address set to key
+        # 'address'
+        with open(file_path, "r") as file: file_data = file.read()
+        data = json.loads(file_data)
+        code = data["code"]
+        address = data["address"]
+    else:
+        # This is a .rom file, ie. just a binary data dump, so open it and
+        # convert to a bytearray
+        file = open(file_path, "rb")
+        file_data = bytearray(file.read())
+        file.close()
+        code  = file_data
+        address = start_address
+
+    if code is not None:
         # Prep the disassembly
-        if file_spec[1] is True:
-            data = json.loads(file_data)
-            code = data["code"]
-            address = data["address"]
-        else:
-            code  = file_data
-            address = 32768
-
+        # At this point 'code' is either a bytearray or a string, depending on
+        # the type of file opened
         post_op_bytes = 0
         opnd = 0
         special_opnd = 0
@@ -1255,6 +1269,7 @@ def disassemble_file(file_spec):
         address_mode = ADDR_MODE_NONE
         line_str = ""
         byte_str = ""
+        str_str = ""
         index_str = ""
         got_op = False
 
@@ -1262,9 +1277,15 @@ def disassemble_file(file_spec):
         print("-------------------------------")
         # Run through the machine code byte by byte
         for unit in code:
+            # Only proceed if we're in the required address range
+            if address < base_address or address > base_address + num_bytes:
+                address += 1
+                continue
+
             # Get the current byte
-            next_byte = ord(unit)
+            next_byte = ord(unit) if file_type is True else unit
             byte_str += "{0:02X}".format(next_byte)
+            str_str += (chr(next_byte) if next_byte > 31 and next_byte < 128 else "_")
 
             # Combine the current byte with the previous one, if that
             # was 0x10 or 0x11 (ie. extended ISA)
@@ -1459,11 +1480,12 @@ def disassemble_file(file_spec):
                     # and zero key variables
                     line_str += index_str
                     space_str = set_spacer(line_str)
-                    print(line_str + space_str + byte_str)
+                    print(line_str + space_str + byte_str + "    " + str_str)
                     got_op = False
                     index_code = 0
                     opnd = 0
                     byte_str = ""
+                    str_str = ""
                     index_str = ""
 
 
@@ -1725,6 +1747,38 @@ if __name__ == '__main__':
                 # Make sure 'outfile' is a .6809 file
                 parts = out_file.split(".")
                 if parts == 1: out_file += ".6809"
+                arg_flag = True
+            elif item in ("-n", "--numbytes"):
+                # Handle the -n / --numbytes switch
+                if index + 1 >= len(sys.argv):
+                    print("[ERROR] -n / --numbytes must be followed by an integer value")
+                    sys.exit(1)
+                number = sys.argv[index + 1]
+                base = 10
+                if number[0] == "$": number = "0x" + number[1:]
+                if number[:2] == "0x": base = 16
+                try:
+                    num_bytes = int(number, base)
+                except ValueError:
+                    print("[ERROR] -n / --numbytes must be followed by an integer value")
+                    sys.exit(1)
+                show_verbose("Number of disassembly bytes set to " + str(num_bytes))
+                arg_flag = True
+            elif item in ("-b", "--baseaddress"):
+                # Handle the -b / --baseaddress switch
+                if index + 1 >= len(sys.argv):
+                    print("[ERROR] -b / --baseaddress must be followed by an address")
+                    sys.exit(1)
+                address = sys.argv[index + 1]
+                base = 10
+                if address[0] == "$": address = "0x" + address[1:]
+                if address[:2] == "0x": base = 16
+                try:
+                    base_address = int(address, base)
+                except ValueError:
+                    print("[ERROR] -b / --baseaddress must be followed by an address")
+                    sys.exit(1)
+                show_verbose("Disassembly start address set to 0x{0:04X}".format(base_address))
                 arg_flag = True
             else:
                 if item[0] == "-":
