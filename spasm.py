@@ -1273,8 +1273,8 @@ def disassemble_file(file_spec):
         index_str = ""
         got_op = False
 
-        print("Address   Operation       Bytes")
-        print("-------------------------------")
+        print("Address   Operation         Bytes     Ascii")
+        print("-------------------------------------------")
         # Run through the machine code byte by byte
         for unit in code:
             # Only proceed if we're in the required address range
@@ -1349,7 +1349,7 @@ def disassemble_file(file_spec):
                 # Gather the operand bytes (if any) according to addressing mode
                 if address_mode == ADDR_MODE_INHERENT:
                     # There's no operand with inherent addressing, so just dump the line
-                    print(line_str + set_spacer(line_str) + byte_str)
+                    print(line_str + set_spacer(26, len(line_str)) + byte_str)
                     address += 1
                     byte_str = ""
                 elif address_mode == ADDR_MODE_IMMEDIATE:
@@ -1479,8 +1479,9 @@ def disassemble_file(file_spec):
                     # We've got all the operand bytes we need, so output the line
                     # and zero key variables
                     line_str += index_str
-                    space_str = set_spacer(line_str)
-                    print(line_str + space_str + byte_str + "    " + str_str)
+                    space_str = set_spacer(28, len(line_str))
+                    print_str = line_str + space_str + byte_str
+                    print(print_str + set_spacer(38, len(print_str)) + str_str)
                     got_op = False
                     index_code = 0
                     opnd = 0
@@ -1489,18 +1490,19 @@ def disassemble_file(file_spec):
                     index_str = ""
 
 
-def set_spacer(spaces):
+def set_spacer(max, min):
     '''
     Determing the number of spaces to pad a printed line.
 
     Args:
-        spaces (int): The length of the unpadded line.
+        max (int): The length of the padded line.
+        min (int): The length of the unpadded line.
 
     Returns:
         str: A string of spaces to pad the line.
     '''
 
-    num = 26 - len(spaces)
+    num = max - min
     # If the line is too long, just return a couple of spaces
     if num < 1: return "  "
     return SPACES[:num]
