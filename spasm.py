@@ -36,7 +36,8 @@ ERRORS = {"0": "No error",
           "6": "Decode error",
           "7": "Bad TFR/EXG operand",
           "8": "Bad PUL/PSH operand",
-          "9": "Bad address"}
+          "9": "Bad address",
+          "10": "8-bit operand expected"} # ADDED 1.1.1
 ADDR_MODE_NONE              = 0 # pylint: disable=C0326;
 ADDR_MODE_IMMEDIATE         = 1 # pylint: disable=C0326;
 ADDR_MODE_DIRECT            = 2 # pylint: disable=C0326;
@@ -220,6 +221,7 @@ class LineData:
     pseudo_op_value = ""
     op = []
     opnd = -1
+    expects_8b_opnd = False # ADDED 1.1.1
 
     def __init__(self):
         self.op = []
@@ -411,7 +413,7 @@ def parse_line(line, line_number):
 
     # Calculate the operand
     result = decode_opnd(line_parts[2], line_data)
-    if result is False: return False
+    if result is -1: return False
 
     # Handle a a pseudo-op (assembler directive) if we have one
     if line_data.pseudo_op_type > 0:
@@ -556,10 +558,13 @@ def decode_opnd(an_opnd, line):
                 if op_char == ">":
                     # Direct addressing
                     line.op_type = ADDR_MODE_DIRECT
+                    line.expects_8b_opnd = True
                     opnd_str = ""
                 elif op_char == "#":
                     # Immediate addressing
                     line.op_type = ADDR_MODE_IMMEDIATE
+                    reg = line.op[0]
+                    if reg[-1:] in ("A", "B") or reg[-2:] == "CC": line.expects_8b_opnd = True
                     opnd_str = ""
                 else:
                     # Convert value internally as hex
@@ -617,7 +622,10 @@ def decode_opnd(an_opnd, line):
                 opnd_value = get_int_value(opnd_str)
         elif line.indirect_flag is False:
             # Get the value for any operand other than indexed
-            opnd_value = get_int_value(opnd_str)
+            size = 16
+            if line.expects_8b_opnd is True and line.op_type == ADDR_MODE_IMMEDIATE:
+                size = 8
+            opnd_value = get_int_value(opnd_str, size)
 
         if line.branch_op_type > 0:
             # Process a branch value
@@ -646,6 +654,14 @@ def decode_opnd(an_opnd, line):
         elif line.op_type == ADDR_MODE_NONE:
             # Set Extended addressing
             line.op_type = ADDR_MODE_EXTENDED
+
+    # ADDED 1.1.1: check that ops expecting an 8-bit operand get one
+    if line.expects_8b_opnd is True and line.op_type in (ADDR_MODE_IMMEDIATE, ADDR_MODE_DIRECT):
+        # We do expect an 8-bit operand
+        if opnd_value < 0 or opnd_value > 255:
+            # But the value is out of range, so report an error
+            error_message(10, line.line_number) # Bad branch type: out of range operand
+            return -1
 
     line.opnd = opnd_value
     return opnd_value
@@ -959,12 +975,13 @@ def get_pull_reg_value(reg):
     return -1
 
 
-def get_int_value(num_str):
+def get_int_value(num_str, size=8):
     '''
     Convert a prefixed string value to an integer.
 
     Args:
         num_str (str): The known numeric string.
+        size    (int): The number of bits in the value
 
     Returns:
         int: A positive integer value.
@@ -988,6 +1005,14 @@ def get_int_value(num_str):
         value = ord(num_str[1])
     else:
         value = int(num_str)
+
+    # FROM 1.11.1: check for negative values - cast to 2's comp
+    if value < 0:
+        if value < -128 or size == 16:
+            value += 32768
+        else:
+            value += 256
+
     return value
 
 
