@@ -1,4 +1,4 @@
-# SPASM ‘Smittytone’s Primary 6809 ASeMbler’ 1.1.0 #
+# SPASM ‘Smittytone’s Primary 6809 ASeMbler’ 1.1.1 #
 
 *spasm* is an assembler/disassembler for the Motorola 6809 microprocessor written in Python 3.
 
@@ -195,6 +195,9 @@ See below for a full list of *spasm* switches.
 
 ## Release Notes ##
 
+- 1.1.1 &mdash; *unreleased*
+    - Handle negative operands correctly
+    - Check ops that expect an 8-bit value don't get a 16-bit value
 - 1.1.0 &mdash; *30 April 2019*
     - Add disassembly of `.rom` files.
     - Add `-n` switch to set number of bytes of code to be disassembled.
