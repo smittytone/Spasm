@@ -195,7 +195,7 @@ See below for a full list of *spasm* switches.
 
 ## Release Notes ##
 
-- 1.1.0 &mdash; *unreleased*
+- 1.1.0 &mdash; *30 April 2019*
     - Add disassembly of `.rom` files.
     - Add `-n` switch to set number of bytes of code to be disassembled.
     - Add `-b` switch to set base address of disassembly.
