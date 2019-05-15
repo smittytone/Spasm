@@ -1783,7 +1783,9 @@ if __name__ == '__main__':
                 else:
                     out_file = sys.argv[index + 1]
                     _, file_ext = os.path.splitext(out_file)
-                    if file_ext not in (".6809", ".hex"):
+                    if file_ext in (".6809", ".hex"):
+                        out_as_hex = True if file_ext == ".hex" else False
+                    else:
                         print("[ERROR] -o / --outfile must specify a .6089 or .hex file")
                         sys.exit(1)
                     # Make sure 'outfile' is a .6809 file
