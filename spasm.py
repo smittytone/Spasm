@@ -200,6 +200,7 @@ num_bytes = 256
 labels = None
 code = None
 out_file = None
+out_as_hex = False
 
 ##########################################################################
 # Application-specific classes                                           #
@@ -255,9 +256,7 @@ def assemble_file(file_path):
         show_verbose("[ERROR] File " + file_path + " does not exist, skipping")
         return
 
-    if verbose is True:
-        print("****** PROCESSING FILE  ******")
-        print(file_path)
+    if verbose is True: print("Processing file: " + os.path.abspath(file_path))
 
     # Do the assembly in two passes
     break_flag = False
@@ -265,7 +264,7 @@ def assemble_file(file_path):
         # Start a pass
         prog_count = start_address
         pass_count = asm_pass
-        show_verbose("****** ASSEMBLY PASS #" + str(asm_pass) + " ******")
+        show_verbose("Assembly pass #" + str(asm_pass))
         i = 0
         for line in lines:
             # Parse the lines one at a time
@@ -302,7 +301,7 @@ def assemble_file(file_path):
     if out_file is not None and break_flag is False:
         if out_file == "*":
             o_file, _ = os.path.splitext(file_path)
-            write_file(o_file + ".6089")
+            write_file(o_file + (".6089" if out_as_hex is False else ".hex"))
         else:
             write_file(out_file)
 
@@ -1646,7 +1645,9 @@ def show_help():
     print(" -b / --baseaddress  - Set the base address of disassembled code,")
     print("                       specified as a hex or decimal value.")
     print(" -n / --numbytes     - The number of bytes to disassemble.")
-    print(" -o / --output       - Name an output file for assembled code.")
+    print(" -o / --output       - Save assembled code to a file. The name is optional; if no name")
+    print("                       is specified, the input file name is used with a suitable extension")
+    print(" -t / --type         - Type of output file: 'h' for .hex, '6' for .6809. Default: .hex")
     print(" -l / --lower        - Display opcodes in lowercase.")
     print(" -u / --upper        - Display opcodes in uppercase.")
     print("                       NOTE the above two switch will overwrite each other")
@@ -1657,22 +1658,29 @@ def show_help():
 
 def write_file(file_path=None):
     '''
-    Write the assembled bytes, if any, to a .6809 file.
+    Write the assembled bytes, if any, to a .6809 or (from 1.1.0) .hex file.
 
     Args:
         file_path (str): The path of the output file.
     '''
 
     if file_path:
-        # Build the dictionary and convert to JSON
+        # Build the output data string
         byte_str = ""
-        for a_byte in code: byte_str += chr(a_byte)
-        the_op = {"address": start_address, "code": byte_str}
-        json_op = json.dumps(the_op, ensure_ascii=False)
+        for a_byte in code:
+            byte_str += chr(a_byte) if out_as_hex is False else ("%02X" % a_byte)
+
+        if out_as_hex is False:
+            # Build the dictionary and convert to JSON
+            the_op = {"address": start_address, "code": byte_str}
+            json_op = json.dumps(the_op, ensure_ascii=False)
+        else:
+            # Just use the data string
+            json_op = byte_str
 
         # Write out the file
         with open(file_path, "w") as file: file.write(json_op)
-        print("File " + file_path + " written")
+        print("File " + os.path.abspath(file_path) + " written")
 
 
 def get_files():
@@ -1775,13 +1783,13 @@ if __name__ == '__main__':
                 else:
                     out_file = sys.argv[index + 1]
                     _, file_ext = os.path.splitext(out_file)
-                    if file_ext != ".6809":
-                        print("[ERROR] -o / --outfile must specify a .6089 file")
+                    if file_ext not in (".6809", ".hex"):
+                        print("[ERROR] -o / --outfile must specify a .6089 or .hex file")
                         sys.exit(1)
-                # Make sure 'outfile' is a .6809 file
-                parts = out_file.split(".")
-                if parts == 1: out_file += ".6809"
-                arg_flag = True
+                    # Make sure 'outfile' is a .6809 file
+                    parts = out_file.split(".")
+                    if parts == 1: out_file += (".6809" if out_as_hex is True else ".hex")
+                    arg_flag = True
             elif item in ("-n", "--numbytes"):
                 # Handle the -n / --numbytes switch
                 if index + 1 >= len(sys.argv):
@@ -1813,6 +1821,20 @@ if __name__ == '__main__':
                     print("[ERROR] -b / --baseaddress must be followed by an address")
                     sys.exit(1)
                 show_verbose("Disassembly start address set to 0x{0:04X}".format(base_address))
+                arg_flag = True
+            elif item in ("-t", "--type"):
+                # Handle the -t / --type switch
+                if index + 1 >= len(sys.argv):
+                    print("[ERROR] -t / --type must be followed by a value (h or 6)")
+                    sys.exit(1)
+                value = sys.argv[index + 1]
+                print(value)
+                if value in ("h", "6"):
+                    if value == "h": out_as_hex = True
+                else:
+                    print("[ERROR] -t / --type must be followed by a value (h or 6)")
+                    sys.exit(1)
+                show_verbose("Output file file will be of type " + (".hex" if out_as_hex is True else ".6809"))
                 arg_flag = True
             else:
                 if item[0] == "-":
