@@ -1371,7 +1371,7 @@ def disassemble_file(file_spec):
 
 
                 # Set the initial part of the output line
-                line_str = "0x{0:04X}".format(address) + "    " + the_op + "   "
+                line_str = "${0:04X}".format(address) + "    " + the_op + "   "
 
                 # Add a space for three-character opcodes
                 if len(the_op) < 5: line_str += set_spacer(5, len(the_op))
@@ -1401,7 +1401,7 @@ def disassemble_file(file_spec):
                         if the_op[-2:] == "PC": post_op_bytes = 2
 
                         # Add the # symbol it indicate addressing type
-                        line_str += "#"
+                        line_str += "#$"
                 elif address_mode in (ADDR_MODE_DIRECT, ADDR_MODE_INDEXED, ADDR_MODE_EXTENDED):
                     # Indexed, Direct and Extended addressing
                     got_op = True
