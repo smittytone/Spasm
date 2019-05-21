@@ -201,7 +201,6 @@ labels = None
 code = None
 out_file = None
 current_chunk = None
-out_as_hex = False
 
 ##########################################################################
 # Application-specific classes                                           #
@@ -318,7 +317,7 @@ def assemble_file(file_path):
     if out_file is not None and break_flag is False:
         if out_file == "*":
             o_file, _ = os.path.splitext(file_path)
-            write_file(o_file + (".6809" if out_as_hex is False else ".hex"))
+            write_file(o_file + ".6809")
         else:
             write_file(out_file)
 
@@ -569,7 +568,6 @@ def decode_opnd(an_opnd, line):
         if an_opnd == " ": an_opnd = ""
         if an_opnd:
             # Operand string is not empty (it could be, eg. SWI) so process it char by char
-            if line.pseudo_op_type == 8: print(an_opnd)
             for op_char in an_opnd:
                 if op_char == ">":
                     # Direct addressing
@@ -596,7 +594,7 @@ def decode_opnd(an_opnd, line):
                                 return -1
                             break
                     # Remove spaces and re-assemble string
-                    if op_char != " ": opnd_str += op_char
+                    if op_char != " " and op_char != '"': opnd_str += op_char
 
     if opnd_str and opnd_str[0] == "@":
         # Operand is a label
@@ -845,7 +843,6 @@ def process_pseudo_op(line_parts, line):
 
     if line.pseudo_op_type == 8:
         # FCC: Pokes in a string
-        print("**** " + line.pseudo_op_value)
         result = write_code(line_parts, line)
         for i in range(0, len(line.pseudo_op_value)):
             byte = line.pseudo_op_value[i:i+1]
@@ -1125,7 +1122,6 @@ def write_code(line_parts, line):
 
     # Set up a place to store the line's machine code output
     byte_str = ""
-    chunk = current_chunk
 
     if len(line.op) > 1:
         if line.branch_op_type > 0: line.op_type = line.branch_op_type
@@ -1348,7 +1344,7 @@ def disassemble_file(file_spec):
         file = open(file_path, "rb")
         file_data = bytearray(file.read())
         file.close()
-        code  = file_data
+        code = file_data
         address = start_address
 
     if code is not None:
@@ -1584,19 +1580,19 @@ def disassemble_file(file_spec):
                     index_str = ""
 
 
-def set_spacer(max, min):
+def set_spacer(a_max, a_min):
     '''
     Determing the number of spaces to pad a printed line.
 
     Args:
-        max (int): The length of the padded line.
-        min (int): The length of the unpadded line.
+        a_max (int): The length of the padded line.
+        a_min (int): The length of the unpadded line.
 
     Returns:
         str: A string of spaces to pad the line.
     '''
 
-    num = max - min
+    num = a_max - a_min
     # If the line is too long, just return a couple of spaces
     if num < 1: return "  "
     return SPACES[:num]
@@ -1717,7 +1713,6 @@ def show_help():
     print(" -n / --numbytes     - The number of bytes to disassemble.")
     print(" -o / --output       - Save assembled code to a file. The name is optional; if no name")
     print("                       is specified, the input file name is used with a suitable extension")
-    print(" -t / --type         - Type of output file: 'h' for .hex, '6' for .6809. Default: .hex")
     print(" -l / --lower        - Display opcodes in lowercase.")
     print(" -u / --upper        - Display opcodes in uppercase.")
     print("                       NOTE the above two switches will overwrite each other")
@@ -1728,34 +1723,25 @@ def show_help():
 
 def write_file(file_path=None):
     '''
-    Write the assembled bytes, if any, to a .6809 or (from 1.1.0) .hex file.
+    Write the assembled bytes, if any, to a .6809 file.
 
     Args:
         file_path (str): The path of the output file.
     '''
 
     # FROM 1.2.0 The 'code' field is a sequence of hex values
-    #            With .hex output, only the first chunk is saved
     if file_path:
-        if out_as_hex is False:
-            op_data = []
-            for chunk in code:
-                # Build the output data string
-                byte_str = ""
-                for a_byte in chunk["code"]:
-                    byte_str += ("%02X" % a_byte)
-
-                # Build the dictionary and add to the data array
-                op_part = {"address": chunk["address"], "code": byte_str}
-                op_data.append(op_part)
-            json_op = json.dumps(op_data, ensure_ascii=False)
-        else:
-            if len(code) > 1:
-                print("There are " + str(len(code)) + " code blocks assembled -- only the first will be saved in .hex format")
-            json_op = ""
-            chunk = code[0]
+        op_data = []
+        for chunk in code:
+            # Build the output data string
+            byte_str = ""
             for a_byte in chunk["code"]:
-                json_op += ("%02X" % a_byte)
+                byte_str += ("%02X" % a_byte)
+
+            # Build the dictionary and add to the data array
+            op_part = {"address": chunk["address"], "code": byte_str}
+            op_data.append(op_part)
+        json_op = json.dumps(op_data, ensure_ascii=False)
 
         # Write out the file
         with open(file_path, "w") as file: file.write(json_op)
@@ -1863,14 +1849,12 @@ if __name__ == '__main__':
                 else:
                     out_file = sys.argv[index + 1]
                     _, file_ext = os.path.splitext(out_file)
-                    if file_ext in (".6809", ".hex"):
-                        out_as_hex = True if file_ext == ".hex" else False
-                    else:
-                        print("[ERROR] -o / --outfile must specify a .6809 or .hex file")
+                    if file_ext not in (".6809"):
+                        print("[ERROR] -o / --outfile must specify a .6809 sfile")
                         sys.exit(1)
                     # Make sure 'outfile' is a .6809 file
                     parts = out_file.split(".")
-                    if parts == 1: out_file += (".6809" if out_as_hex is True else ".hex")
+                    if parts == 1: out_file += ".6809"
                     arg_flag = True
             elif item in ("-n", "--numbytes"):
                 # Handle the -n / --numbytes switch
@@ -1903,20 +1887,6 @@ if __name__ == '__main__':
                     print("[ERROR] -b / --baseaddress must be followed by an address")
                     sys.exit(1)
                 show_verbose("Disassembly start address set to 0x{0:04X}".format(base_address))
-                arg_flag = True
-            elif item in ("-t", "--type"):
-                # Handle the -t / --type switch
-                if index + 1 >= len(sys.argv):
-                    print("[ERROR] -t / --type must be followed by a value (h or 6)")
-                    sys.exit(1)
-                value = sys.argv[index + 1]
-                print(value)
-                if value in ("h", "6"):
-                    if value == "h": out_as_hex = True
-                else:
-                    print("[ERROR] -t / --type must be followed by a value (h or 6)")
-                    sys.exit(1)
-                show_verbose("Output file file will be of type " + (".hex" if out_as_hex is True else ".6809"))
                 arg_flag = True
             else:
                 if item[0] == "-":

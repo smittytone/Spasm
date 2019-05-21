@@ -190,14 +190,13 @@ See below for a full list of *spasm* switches.
 | `-b` | `--baseaddress` | Set the base address for disassembled code, specified as a hex or decimal value. Ignored during assembly |
 | `-n` | `--numbytes` | Set the number of bytes to disassemble, specified as a hex or decimal value. Ignored during assembly |
 | `-o` | `--output` | Cause the 6809 output file to be written and, optionally, name it. If you pass no name, the output file name will match the input file |
-| `-t` | `--type` | Set the output file type. Allowed values are `h` (`.hex` file) and `6` (`.6809` file). Use only if you don't specify an output file name; Spasm will use the output file name’s extension to determine output type |
 | `-l` | `--lower` | Display opcodes in lowercase |
 | `-u` | `--upper` | Display opcodes in uppercase.<br />**Note** This and the above switch will overwrite each other; if both are called: the last one wins. If neither is used, the output matches the input |
 
 ## Release Notes ##
 
 - 1.2.0 &mdash; *unreleased*
-    - Allow output as a `.hex` hexstring file
+    - Fully support `ORG` directive: assemble code into multiple chunks
     - `.6809` files' *code* field now contains a string of two-character hex values
     - Handle negative operands correctly
     - Check ops that expect an 8-bit value don't get a 16-bit value
