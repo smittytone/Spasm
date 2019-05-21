@@ -197,9 +197,11 @@ See below for a full list of *spasm* switches.
 ## Release Notes ##
 
 - 1.2.0 &mdash; *unreleased*
-    - Allow output as a .hex hexstring file
+    - Allow output as a `.hex` hexstring file
+    - `.6809` files' *code* field now contains a string of two-character hex values
     - Handle negative operands correctly
     - Check ops that expect an 8-bit value don't get a 16-bit value
+    - Correct address increments during disassembly of extended opcodes
 - 1.1.0 &mdash; *30 April 2019*
     - Add disassembly of `.rom` files.
     - Add `-n` switch to set number of bytes of code to be disassembled.
