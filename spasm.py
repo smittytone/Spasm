@@ -1271,9 +1271,16 @@ def disassemble_file(file_spec):
         # This is a .6809 file, ie. a text representation of JSON, with
         # the code set to key 'code' and the start address set to key
         # 'address'
+        # FROM 1.2.0 The 'code' field is a string of two-character hex values,
+        #            which we now decode to a bytearray (as per a .rom read)
         with open(file_path, "r") as file: file_data = file.read()
         data = json.loads(file_data)
-        code = data["code"]
+        loaded_code = data["code"]
+        code = bytearray()
+        for i in range(0, len(loaded_code), 2):
+            a_char = loaded_code[i:i+2]
+            a_int = int(a_char, 16)
+            code.extend(a_int.to_bytes(1, byteorder='big', signed=False))
         address = data["address"]
         if base_address == 0: base_address = address
         if num_bytes == 0: num_bytes = len(code)
@@ -1305,14 +1312,13 @@ def disassemble_file(file_spec):
         print("Address       Operation              Bytes          Ascii")
         print("---------------------------------------------------------")
         # Run through the machine code byte by byte
-        for unit in code:
+        for next_byte in code:
             # Only proceed if we're in the required address range
             if address < base_address or address > base_address + num_bytes:
                 address += 1
                 continue
 
-            # Get the current byte
-            next_byte = ord(unit) if file_type is True else unit
+            # Assemble the byte string
             byte_str += "{0:02X}".format(next_byte)
             str_str += (chr(next_byte) if next_byte > 31 and next_byte < 128 else "_")
 
@@ -1674,7 +1680,9 @@ def write_file(file_path=None):
         # Build the output data string
         byte_str = ""
         for a_byte in code:
-            byte_str += chr(a_byte) if out_as_hex is False else ("%02X" % a_byte)
+            # FROM 1.2.0 The "code" field is a sequence of hex values, as per .hex files
+            # byte_str += chr(a_byte) if out_as_hex is False else ("%02X" % a_byte)
+            byte_str += ("%02X" % a_byte)
 
         if out_as_hex is False:
             # Build the dictionary and convert to JSON
