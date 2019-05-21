@@ -223,9 +223,15 @@ class LineData:
     op = []
     opnd = -1
     expects_8b_opnd = False # ADDED 1.2.0
+    current_chunk = None
 
     def __init__(self):
         self.op = []
+
+
+class Chunk:
+    address = 0
+    code = bytearray()
 
 
 ##########################################################################
@@ -246,7 +252,7 @@ def assemble_file(file_path):
     # Clear the storage arrays
     lines = []
     labels = []
-    code = bytearray()
+    code = []
 
     # Check that the passed file is available to process
     if os.path.exists(file_path):
@@ -260,6 +266,12 @@ def assemble_file(file_path):
 
     # Do the assembly in two passes
     break_flag = False
+
+    # Create an initial code chunk and add it to the array
+    chunk = Chunk()
+    chunk.address = start_address
+    code.append(chunk)
+
     for asm_pass in range(1, 3):
         # Start a pass
         prog_count = start_address
@@ -282,20 +294,24 @@ def assemble_file(file_path):
             break
 
     # Post-assembly, dump the machine code, provided there was no error
+
     if verbose is True and break_flag is False:
         print(" ")
         print("Machine code dump")
         prog_count = start_address
-        for i in range(0, len(code), 8):
+        for chunk in code:
+            m_code = chunk.code
+            prog_count = chunk.address
             # Add the initial address
-            display_str = "0x{0:04X}".format(prog_count) + "  "
-
-            for j in range(0, 8):
-                if i + j < len(code):
-                    # Add the bytes, one at a time, separated by whitespace
-                    display_str += "  {0:02X}".format(code[i + j])
-                    prog_count += 1
-            print(display_str)
+            for i in range(0, len(m_code), 8):
+                display_str = "0x{0:04X}".format(prog_count) + "  "
+                for j in range(0, 8):
+                    if i + j < len(m_code):
+                        # Add the bytes, one at a time, separated by whitespace
+                        display_str += "  {0:02X}".format(m_code[i + j])
+                        prog_count += 1
+                print(display_str)
+            print(" ")
 
     # Write out the machine code file
     if out_file is not None and break_flag is False:
@@ -357,6 +373,7 @@ def parse_line(line, line_number):
 
     # Begin line decoding: create a line data object
     line_data = LineData()
+    line_data.current_chunk = code[len(code) - 1]
     line_data.line_number = line_number
 
     if not line_parts:
@@ -803,8 +820,15 @@ def process_pseudo_op(line_parts, line):
         # ORG: set or reset the origin
         if pass_count == 1 and verbose is True:
             print("Origin set to " + "0x{0:04X}".format(opnd_value) + " (line " + str(line.line_number + 1) + ")")
-        if prog_count == start_address: start_address = opnd_value
+        if pass_count == 1:
+            if prog_count != line.current_chunk.address:
+                new_chunk = Chunk()
+                code.append(new_chunk)
+                line.current_chunk = new_chunk
+        line.current_chunk.address = opnd_value
+        #if prog_count == start_address: start_address = opnd_value
         prog_count = opnd_value
+
         result = write_code(line_parts, line)
         if label_name:
             idx = index_of_label(label_name)
@@ -1069,6 +1093,7 @@ def write_code(line_parts, line):
 
     # Set up a place to store the line's machine code output
     byte_str = ""
+    chunk = line.current_chunk
 
     if len(line.op) > 1:
         if line.branch_op_type > 0: line.op_type = line.branch_op_type
@@ -1082,15 +1107,15 @@ def write_code(line_parts, line):
 
         # Poke in the opcode
         if op_value < 256:
-            poke(prog_count, op_value)
+            poke(prog_count, op_value, chunk)
             prog_count += 1
             if pass_count == 2: byte_str += "{0:02X}".format(op_value)
         if op_value > 255:
             lsb = op_value & 0xFF
             msb = (op_value & 0xFF00) >> 8
-            poke(prog_count, msb)
+            poke(prog_count, msb, chunk)
             prog_count += 1
-            poke(prog_count, lsb)
+            poke(prog_count, lsb, chunk)
             prog_count += 1
             if pass_count == 2: byte_str += ("{0:02X}".format(msb) + "{0:02X}".format(lsb))
 
@@ -1105,14 +1130,14 @@ def write_code(line_parts, line):
             if an_op in ("D", "X", "Y", "S", "U"): line.op_type = ADDR_MODE_EXTENDED
         if line.op_type == ADDR_MODE_IMMEDIATE_SPECIAL:
             # Immediate addressing: TFR/EXG OR PUL/PSH
-            poke(prog_count, int(line.opnd))
+            poke(prog_count, int(line.opnd), chunk)
             prog_count += 1
             if pass_count == 2: byte_str += "{0:02X}".format(line.opnd)
         if line.op_type == ADDR_MODE_INHERENT:
             # Inherent addressing
             line.op_type = ADDR_MODE_NONE
         if line.index_addressing_flag is True:
-            poke(prog_count, line.opnd)
+            poke(prog_count, line.opnd, chunk)
             if pass_count == 2: byte_str += "{0:02X}".format(line.opnd)
             prog_count += 1
             if line.index_address != -1:
@@ -1127,15 +1152,15 @@ def write_code(line_parts, line):
                 line.op_type = ADDR_MODE_NONE
         if line.op_type > ADDR_MODE_NONE and line.op_type < ADDR_MODE_EXTENDED:
             # Immediate, direct and indexed addressing
-            poke(prog_count, line.opnd)
+            poke(prog_count, line.opnd, chunk)
             prog_count += 1
             if pass_count == 2: byte_str += "{0:02X}".format(line.opnd)
         if line.op_type == ADDR_MODE_EXTENDED:
             # Extended addressing
             lsb = line.opnd & 0xFF
             msb = (line.opnd & 0xFF00) >> 8
-            poke(prog_count, msb)
-            poke(prog_count + 1, lsb)
+            poke(prog_count, msb, chunk)
+            poke(prog_count + 1, lsb, chunk)
             prog_count += 2
             if pass_count == 2: byte_str += ("{0:02X}".format(msb) + "{0:02X}".format(lsb))
 
@@ -1197,7 +1222,7 @@ def write_code(line_parts, line):
     return True
 
 
-def poke(address, value):
+def poke(address, value, chunk):
     '''
     Add new byte values to the machine code storage.
 
@@ -1205,20 +1230,20 @@ def poke(address, value):
         address (int): A 16-bit address in the store.
         value   (int): An 8-bit value to add to the store.
     '''
-    if address - start_address > len(code) - 1:
-        end_address = address - start_address - len(code)
+    if address - chunk.address > len(chunk.code) - 1:
+        end_address = address - chunk.address - len(chunk.code)
         if end_address > 1:
             # 'address' is well beyond the end of the list, so insert
             # padding values in the form of a 6809 NOP opcode
-            for _ in range(0, end_address - 1): code.append(0x12)
+            for _ in range(0, end_address - 1): chunk.code.append(0x12)
         # Poke the provided value after the padding
-        code.append(value)
-    elif not code:
+        chunk.code.append(value)
+    elif not chunk.code:
         # Poke in the first item
-        code.append(value)
+        chunk.code.append(value)
     else:
         # Replace an existing item
-        code[address - start_address] = value
+        chunk.code[address - chunk.address] = value
 
 
 def error_message(err_code, err_line):
