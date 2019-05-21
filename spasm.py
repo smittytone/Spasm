@@ -200,6 +200,7 @@ num_bytes = 256
 labels = None
 code = None
 out_file = None
+current_chunk = None
 out_as_hex = False
 
 ##########################################################################
@@ -229,11 +230,6 @@ class LineData:
         self.op = []
 
 
-class Chunk:
-    address = 0
-    code = bytearray()
-
-
 ##########################################################################
 # Functions                                                              #
 ##########################################################################
@@ -247,7 +243,7 @@ def assemble_file(file_path):
         file_path (str): The path to a .asm file.
     '''
 
-    global pass_count, prog_count, code, labels
+    global pass_count, prog_count, code, labels, current_chunk
 
     # Clear the storage arrays
     lines = []
@@ -268,18 +264,23 @@ def assemble_file(file_path):
     break_flag = False
 
     # Create an initial code chunk and add it to the array
-    chunk = Chunk()
-    chunk.address = start_address
+    chunk = {}
+    chunk["address"] = start_address
+    chunk["code"] = bytearray()
     code.append(chunk)
 
     for asm_pass in range(1, 3):
         # Start a pass
-        prog_count = start_address
         pass_count = asm_pass
         show_verbose("Assembly pass #" + str(asm_pass))
+
+        # Set the current code chunk
+        current_chunk = code[0]
+        prog_count = current_chunk["address"]
+
+        # Parse the lines one at a time
         i = 0
         for line in lines:
-            # Parse the lines one at a time
             result = parse_line(line, i)
             if result is False:
                 # Error in processing: print post
@@ -298,19 +299,19 @@ def assemble_file(file_path):
     if verbose is True and break_flag is False:
         print(" ")
         print("Machine code dump")
-        prog_count = start_address
         for chunk in code:
-            m_code = chunk.code
-            prog_count = chunk.address
+            m_code = chunk["code"]
+            line_address = chunk["address"]
             # Add the initial address
             for i in range(0, len(m_code), 8):
-                display_str = "0x{0:04X}".format(prog_count) + "  "
+                display_str = "0x{0:04X}".format(line_address) + "  "
                 for j in range(0, 8):
                     if i + j < len(m_code):
                         # Add the bytes, one at a time, separated by whitespace
                         display_str += "  {0:02X}".format(m_code[i + j])
-                        prog_count += 1
+                        line_address += 1
                 print(display_str)
+            # Spacer between chunks
             print(" ")
 
     # Write out the machine code file
@@ -373,7 +374,6 @@ def parse_line(line, line_number):
 
     # Begin line decoding: create a line data object
     line_data = LineData()
-    line_data.current_chunk = code[len(code) - 1]
     line_data.line_number = line_number
 
     if not line_parts:
@@ -398,7 +398,6 @@ def parse_line(line, line_number):
             label = labels[got_label]
             if pass_count == 1:
                 if label["addr"] != "UNDEF":
-
                     error_message(2, line_number) # Duplicate label
                     return False
                 # Set the label address
@@ -460,7 +459,7 @@ def decode_op(an_op, line):
     an_op = an_op.upper()
 
     # Check for pseudo-ops
-    pseudo_ops = ("EQU", "RMB", "FCB", "FDB", "END", "ORG", "SETDP")
+    pseudo_ops = ("EQU", "RMB", "FCB", "FDB", "END", "ORG", "SETDP", "FCC")
     if an_op in pseudo_ops:
         line.op = [an_op]
         line.pseudo_op_type = pseudo_ops.index(an_op) + 1
@@ -570,6 +569,7 @@ def decode_opnd(an_opnd, line):
         if an_opnd == " ": an_opnd = ""
         if an_opnd:
             # Operand string is not empty (it could be, eg. SWI) so process it char by char
+            if line.pseudo_op_type == 8: print(an_opnd)
             for op_char in an_opnd:
                 if op_char == ">":
                     # Direct addressing
@@ -636,6 +636,10 @@ def decode_opnd(an_opnd, line):
             else:
                 # Not a list, so just get the value of the operand
                 opnd_value = get_int_value(opnd_str)
+        elif line.pseudo_op_type == 8:
+            # FCC - get a string
+            line.pseudo_op_value = opnd_str
+            opnd_value = 0
         elif line.indirect_flag is False:
             # Get the value for any operand other than indexed
             size = 16
@@ -695,7 +699,7 @@ def process_pseudo_op(line_parts, line):
         bool: False if an error occurred, or True.
     '''
 
-    global prog_count, start_address
+    global prog_count, current_chunk
 
     result = False
     label_name = line_parts[0]
@@ -743,9 +747,10 @@ def process_pseudo_op(line_parts, line):
             for i in range(0, len(line.pseudo_op_value), 2):
                 byte = line.pseudo_op_value[i:i+2]
                 if i == 0:
-                    line.opnd = int(byte)
+                    line.opnd = int(byte, 16)
                     result = write_code(line_parts, line)
-                elif pass_count == 2: print("0x{0:04X}".format(prog_count) + "    " + byte)
+                elif pass_count == 2:
+                    print("0x{0:04X}".format(prog_count) + "    " + byte)
                 poke(prog_count, int(byte, 16))
                 prog_count += 1
                 count += 1
@@ -818,17 +823,18 @@ def process_pseudo_op(line_parts, line):
 
     if line.pseudo_op_type == 6:
         # ORG: set or reset the origin
-        if pass_count == 1 and verbose is True:
-            print("Origin set to " + "0x{0:04X}".format(opnd_value) + " (line " + str(line.line_number + 1) + ")")
         if pass_count == 1:
-            if prog_count != line.current_chunk.address:
-                new_chunk = Chunk()
+            if verbose is True:
+                print("Origin set to " + "0x{0:04X}".format(opnd_value) + " (line " + str(line.line_number + 1) + ")")
+            if prog_count != current_chunk["address"]:
+                new_chunk = {}
+                new_chunk["code"] = bytearray()
+                new_chunk["address"] = 0xFFFF
                 code.append(new_chunk)
-                line.current_chunk = new_chunk
-        line.current_chunk.address = opnd_value
-        #if prog_count == start_address: start_address = opnd_value
+                current_chunk = new_chunk
+            current_chunk["address"] = opnd_value
+        current_chunk = chunk_from_address(opnd_value)
         prog_count = opnd_value
-
         result = write_code(line_parts, line)
         if label_name:
             idx = index_of_label(label_name)
@@ -837,7 +843,33 @@ def process_pseudo_op(line_parts, line):
             if pass_count == 1 and verbose is True:
                 print("Label " + label["name"] + " set to 0x" + "{0:04X}".format(opnd_value) + " (line " + str(line.line_number + 1) + ")")
 
+    if line.pseudo_op_type == 8:
+        # FCC: Pokes in a string
+        print("**** " + line.pseudo_op_value)
+        result = write_code(line_parts, line)
+        for i in range(0, len(line.pseudo_op_value)):
+            byte = line.pseudo_op_value[i:i+1]
+            poke(prog_count, ord(byte))
+            prog_count += 1
+
     return result
+
+
+def chunk_from_address(address):
+    '''
+    Get a specific chunk from its address.
+
+    Args:
+        address (int): The chunk address.
+
+    Returns:
+        Chunk: The required chunk.
+    '''
+    for chunk in code:
+        if chunk["address"] == address:
+            return chunk
+    print("ERROR -- mis-addressed chunk")
+    sys.exit(1)
 
 
 def decode_indexed(opnd, line):
@@ -1093,7 +1125,7 @@ def write_code(line_parts, line):
 
     # Set up a place to store the line's machine code output
     byte_str = ""
-    chunk = line.current_chunk
+    chunk = current_chunk
 
     if len(line.op) > 1:
         if line.branch_op_type > 0: line.op_type = line.branch_op_type
@@ -1107,15 +1139,15 @@ def write_code(line_parts, line):
 
         # Poke in the opcode
         if op_value < 256:
-            poke(prog_count, op_value, chunk)
+            poke(prog_count, op_value)
             prog_count += 1
             if pass_count == 2: byte_str += "{0:02X}".format(op_value)
         if op_value > 255:
             lsb = op_value & 0xFF
             msb = (op_value & 0xFF00) >> 8
-            poke(prog_count, msb, chunk)
+            poke(prog_count, msb)
             prog_count += 1
-            poke(prog_count, lsb, chunk)
+            poke(prog_count, lsb)
             prog_count += 1
             if pass_count == 2: byte_str += ("{0:02X}".format(msb) + "{0:02X}".format(lsb))
 
@@ -1130,14 +1162,14 @@ def write_code(line_parts, line):
             if an_op in ("D", "X", "Y", "S", "U"): line.op_type = ADDR_MODE_EXTENDED
         if line.op_type == ADDR_MODE_IMMEDIATE_SPECIAL:
             # Immediate addressing: TFR/EXG OR PUL/PSH
-            poke(prog_count, int(line.opnd), chunk)
+            poke(prog_count, int(line.opnd))
             prog_count += 1
             if pass_count == 2: byte_str += "{0:02X}".format(line.opnd)
         if line.op_type == ADDR_MODE_INHERENT:
             # Inherent addressing
             line.op_type = ADDR_MODE_NONE
         if line.index_addressing_flag is True:
-            poke(prog_count, line.opnd, chunk)
+            poke(prog_count, line.opnd)
             if pass_count == 2: byte_str += "{0:02X}".format(line.opnd)
             prog_count += 1
             if line.index_address != -1:
@@ -1152,15 +1184,15 @@ def write_code(line_parts, line):
                 line.op_type = ADDR_MODE_NONE
         if line.op_type > ADDR_MODE_NONE and line.op_type < ADDR_MODE_EXTENDED:
             # Immediate, direct and indexed addressing
-            poke(prog_count, line.opnd, chunk)
+            poke(prog_count, line.opnd)
             prog_count += 1
             if pass_count == 2: byte_str += "{0:02X}".format(line.opnd)
         if line.op_type == ADDR_MODE_EXTENDED:
             # Extended addressing
             lsb = line.opnd & 0xFF
             msb = (line.opnd & 0xFF00) >> 8
-            poke(prog_count, msb, chunk)
-            poke(prog_count + 1, lsb, chunk)
+            poke(prog_count, msb)
+            poke(prog_count + 1, lsb)
             prog_count += 2
             if pass_count == 2: byte_str += ("{0:02X}".format(msb) + "{0:02X}".format(lsb))
 
@@ -1222,28 +1254,29 @@ def write_code(line_parts, line):
     return True
 
 
-def poke(address, value, chunk):
+def poke(address, value):
     '''
     Add new byte values to the machine code storage.
 
     Args:
-        address (int): A 16-bit address in the store.
-        value   (int): An 8-bit value to add to the store.
+        address (int):  A 16-bit address in the store.
+        value   (int):  An 8-bit value to add to the store.
     '''
-    if address - chunk.address > len(chunk.code) - 1:
-        end_address = address - chunk.address - len(chunk.code)
+    chunk = current_chunk
+    if address - chunk["address"] > len(chunk["code"]) - 1:
+        end_address = address - chunk["address"] - len(chunk["code"])
         if end_address > 1:
             # 'address' is well beyond the end of the list, so insert
             # padding values in the form of a 6809 NOP opcode
-            for _ in range(0, end_address - 1): chunk.code.append(0x12)
+            for _ in range(0, end_address - 1): chunk["code"].append(0x12)
         # Poke the provided value after the padding
-        chunk.code.append(value)
-    elif not chunk.code:
+        chunk["code"].append(value)
+    elif not chunk["code"]:
         # Poke in the first item
-        chunk.code.append(value)
+        chunk["code"].append(value)
     else:
         # Replace an existing item
-        chunk.code[address - chunk.address] = value
+        chunk["code"][address - chunk["address"]] = value
 
 
 def error_message(err_code, err_line):
@@ -1701,21 +1734,28 @@ def write_file(file_path=None):
         file_path (str): The path of the output file.
     '''
 
+    # FROM 1.2.0 The 'code' field is a sequence of hex values
+    #            With .hex output, only the first chunk is saved
     if file_path:
-        # Build the output data string
-        byte_str = ""
-        for a_byte in code:
-            # FROM 1.2.0 The "code" field is a sequence of hex values, as per .hex files
-            # byte_str += chr(a_byte) if out_as_hex is False else ("%02X" % a_byte)
-            byte_str += ("%02X" % a_byte)
-
         if out_as_hex is False:
-            # Build the dictionary and convert to JSON
-            the_op = {"address": start_address, "code": byte_str}
-            json_op = json.dumps(the_op, ensure_ascii=False)
+            op_data = []
+            for chunk in code:
+                # Build the output data string
+                byte_str = ""
+                for a_byte in chunk["code"]:
+                    byte_str += ("%02X" % a_byte)
+
+                # Build the dictionary and add to the data array
+                op_part = {"address": chunk["address"], "code": byte_str}
+                op_data.append(op_part)
+            json_op = json.dumps(op_data, ensure_ascii=False)
         else:
-            # Just use the data string
-            json_op = byte_str
+            if len(code) > 1:
+                print("There are " + str(len(code)) + " code blocks assembled -- only the first will be saved in .hex format")
+            json_op = ""
+            chunk = code[0]
+            for a_byte in chunk["code"]:
+                json_op += ("%02X" % a_byte)
 
         # Write out the file
         with open(file_path, "w") as file: file.write(json_op)
