@@ -4,7 +4,7 @@
 'SPASM' -- Smittytone's Primary 6809 ASeMmbler
 
 Version:
-    1.1.0
+    1.2.0
 
 Copyright:
     2019, Tony Smith (@smittytone)
@@ -37,7 +37,7 @@ ERRORS = {"0": "No error",
           "7": "Bad TFR/EXG operand",
           "8": "Bad PUL/PSH operand",
           "9": "Bad address",
-          "10": "8-bit operand expected"} # ADDED 1.1.1
+          "10": "8-bit operand expected"} # ADDED 1.2.0
 ADDR_MODE_NONE              = 0 # pylint: disable=C0326;
 ADDR_MODE_IMMEDIATE         = 1 # pylint: disable=C0326;
 ADDR_MODE_DIRECT            = 2 # pylint: disable=C0326;
@@ -222,7 +222,7 @@ class LineData:
     pseudo_op_value = ""
     op = []
     opnd = -1
-    expects_8b_opnd = False # ADDED 1.1.1
+    expects_8b_opnd = False # ADDED 1.2.0
 
     def __init__(self):
         self.op = []
@@ -301,7 +301,7 @@ def assemble_file(file_path):
     if out_file is not None and break_flag is False:
         if out_file == "*":
             o_file, _ = os.path.splitext(file_path)
-            write_file(o_file + (".6089" if out_as_hex is False else ".hex"))
+            write_file(o_file + (".6809" if out_as_hex is False else ".hex"))
         else:
             write_file(out_file)
 
@@ -654,7 +654,7 @@ def decode_opnd(an_opnd, line):
             # Set Extended addressing
             line.op_type = ADDR_MODE_EXTENDED
 
-    # ADDED 1.1.1: check that ops expecting an 8-bit operand get one
+    # ADDED 1.2.0: check that ops expecting an 8-bit operand get one
     if line.expects_8b_opnd is True and line.op_type in (ADDR_MODE_IMMEDIATE, ADDR_MODE_DIRECT):
         # We do expect an 8-bit operand
         if opnd_value < 0 or opnd_value > 255:
@@ -866,6 +866,7 @@ def decode_indexed(opnd, line):
                         return ""
                     labels.append({"name": left, "addr": "UNDEF"})
                     if verbose is True and pass_count == 1: print("Label " + left + " found on line " + str(line.line_number + 1))
+                    # Set byte value to 129 to make sure we allow a 16-bit max. space
                     byte_value = 129
                 else:
                     label = labels[index]
@@ -974,7 +975,7 @@ def get_pull_reg_value(reg):
     return -1
 
 
-def get_int_value(num_str, size=8):
+def get_int_value(num_str, size=8, doTwos=False):
     '''
     Convert a prefixed string value to an integer.
 
@@ -1005,8 +1006,8 @@ def get_int_value(num_str, size=8):
     else:
         value = int(num_str)
 
-    # FROM 1.11.1: check for negative values - cast to 2's comp
-    if value < 0:
+    # FROM 1.2.0: check for negative values - cast to 2's comp
+    if value < 0 and doTwos is True:
         if value < -128 or size == 16:
             value += 32768
         else:
@@ -1256,6 +1257,8 @@ def disassemble_file(file_spec):
         file_spec (str, bool): The path and the type of the file (True = .6809, False = .rom).
     '''
 
+    global base_address, num_bytes
+
     file_data = None
     file_path = file_spec[0]
     file_type = file_spec[1]
@@ -1272,6 +1275,8 @@ def disassemble_file(file_spec):
         data = json.loads(file_data)
         code = data["code"]
         address = data["address"]
+        if base_address == 0: base_address = address
+        if num_bytes == 0: num_bytes = len(code)
     else:
         # This is a .rom file, ie. just a binary data dump, so open it and
         # convert to a bytearray
@@ -1368,12 +1373,12 @@ def disassemble_file(file_spec):
                 line_str = "0x{0:04X}".format(address) + "    " + the_op + "   "
 
                 # Add a space for three-character opcodes
-                if len(the_op) == 3: line_str += " "
+                if len(the_op) < 5: line_str += set_spacer(5, len(the_op))
 
                 # Gather the operand bytes (if any) according to addressing mode
                 if address_mode == ADDR_MODE_INHERENT:
                     # There's no operand with inherent addressing, so just dump the line
-                    print(line_str + set_spacer(26, len(line_str)) + byte_str)
+                    print(line_str + set_spacer(28, len(line_str)) + byte_str)
                     address += 1
                     byte_str = ""
                 elif address_mode == ADDR_MODE_IMMEDIATE:
@@ -1391,7 +1396,8 @@ def disassemble_file(file_spec):
                     else:
                         # Set the number of operand bytes to gather to the byte-size of the
                         # named register (eg. two bytes for 16-bit registers
-                        if the_op[-1:] in ("X", "Y", "D", "S", "U", "C"): post_op_bytes = 2
+                        if the_op[-1:] in ("X", "Y", "D", "S", "U"): post_op_bytes = 2
+                        if the_op[-2:] == "PC": post_op_bytes = 2
 
                         # Add the # symbol it indicate addressing type
                         line_str += "#"
@@ -1415,7 +1421,7 @@ def disassemble_file(file_spec):
                     target = 0
                     if next_byte & 0x80 == 0x80:
                         # Sign bit set
-                        target = address + 1 - (255 - next_byte)
+                        target = address + 1 - (256 - next_byte)
                     else:
                         target = address + 1 + next_byte
                     line_str += "${0:04X}".format(target)
@@ -1650,7 +1656,7 @@ def show_help():
     print(" -t / --type         - Type of output file: 'h' for .hex, '6' for .6809. Default: .hex")
     print(" -l / --lower        - Display opcodes in lowercase.")
     print(" -u / --upper        - Display opcodes in uppercase.")
-    print("                       NOTE the above two switch will overwrite each other")
+    print("                       NOTE the above two switches will overwrite each other")
     print("                            if both are called: the last one wins. If neither")
     print("                            is used, the output matches the input.")
     print(" ")
@@ -1730,6 +1736,7 @@ def handle_files(the_files=None):
 
     if the_files:
         for file in the_files:
+            print(file)
             if file[-2:] == "sm": assemble_file(file)
             if file[-1:] == "9": disassemble_file((file, True))
             if file[-2:] == "om": disassemble_file((file, False))
@@ -1786,7 +1793,7 @@ if __name__ == '__main__':
                     if file_ext in (".6809", ".hex"):
                         out_as_hex = True if file_ext == ".hex" else False
                     else:
-                        print("[ERROR] -o / --outfile must specify a .6089 or .hex file")
+                        print("[ERROR] -o / --outfile must specify a .6809 or .hex file")
                         sys.exit(1)
                     # Make sure 'outfile' is a .6809 file
                     parts = out_file.split(".")
