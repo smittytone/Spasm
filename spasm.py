@@ -1302,8 +1302,8 @@ def disassemble_file(file_spec):
         index_str = ""
         got_op = False
 
-        print("Address   Operation         Bytes     Ascii")
-        print("-------------------------------------------")
+        print("Address       Operation              Bytes          Ascii")
+        print("---------------------------------------------------------")
         # Run through the machine code byte by byte
         for unit in code:
             # Only proceed if we're in the required address range
@@ -1369,9 +1369,8 @@ def disassemble_file(file_spec):
                 if found is False:
                     print("Bad Op: " + "${0:02X}".format(next_byte))
 
-
                 # Set the initial part of the output line
-                line_str = "${0:04X}".format(address) + "    " + the_op + "   "
+                line_str = "${0:04X}".format(address) + "         " + the_op + "   "
 
                 # Add a space for three-character opcodes
                 if len(the_op) < 5: line_str += set_spacer(5, len(the_op))
@@ -1379,7 +1378,7 @@ def disassemble_file(file_spec):
                 # Gather the operand bytes (if any) according to addressing mode
                 if address_mode == ADDR_MODE_INHERENT:
                     # There's no operand with inherent addressing, so just dump the line
-                    print(line_str + set_spacer(28, len(line_str)) + byte_str)
+                    print(line_str + set_spacer(37, len(line_str)) + byte_str)
                     address += 1
                     byte_str = ""
                 elif address_mode == ADDR_MODE_IMMEDIATE:
@@ -1510,9 +1509,9 @@ def disassemble_file(file_spec):
                     # We've got all the operand bytes we need, so output the line
                     # and zero key variables
                     line_str += index_str
-                    space_str = set_spacer(28, len(line_str))
+                    space_str = set_spacer(37, len(line_str))
                     print_str = line_str + space_str + byte_str
-                    print(print_str + set_spacer(38, len(print_str)) + str_str)
+                    print(print_str + set_spacer(52, len(print_str)) + str_str)
                     got_op = False
                     index_code = 0
                     opnd = 0
