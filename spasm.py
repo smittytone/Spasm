@@ -1331,6 +1331,7 @@ def disassemble_file(file_spec):
                     # Extended ISA indicator found, so hold for combination
                     # with the next loaded byte of code
                     pre_op_byte = next_byte
+                    address += 1
                     continue
 
                 # Run through the main ISA to find the op
