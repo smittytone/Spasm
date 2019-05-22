@@ -59,7 +59,7 @@ Various literal types are supported. Literals are assumed to be decimal, but you
 
 ### Labels ###
 
-As the above example shows, *spasm* supports the use of labels to represent values and memory locations (eg. for jumps and branches). All labels must be prefixed with `@`.
+As the above example shows, *spasm* supports the use of labels to represent values and memory locations (eg. for jumps and branches). All labels **must** be prefixed with `@`.
 
 ### Comments ###
 
@@ -73,13 +73,15 @@ Comments can be entered by prefixing them with a `;`. At this time, multi-line c
 - `END` &mdash; optional end-of-code marker.
 - `RMB` &mdash; reserve *n* memory bytes at this address, eg. `@label RMB 8 ; add 8 bytes for data storage`.
 - `FCB` &mdash; store the following 8-bit value or values at this address, eg.
-    - `@label FCB $FF         ; poke 255 to this address`.
-    - `@label FCB $FF,$01,$02 ; poke 255, 0, 2 to sequential addresses from this`.
+    - `@label FCB $FF          ; poke 255 to this address`.
+    - `@label FCB $FF,$01,$02  ; poke 255, 0, 2 to sequential addresses from this`.
+- `FCC` &mdash; store the following string at this address, eg.
+    - `@label FCC "Message"    ; poke 77,101,115,115,97,103,101 to sequential addresses`.
 - `FDB` &mdash; store the following 16-bit value or values at this address, eg.
-    - `@label FDB $FF00       ; poke 65280 to this address`.
-    - `@label FDB $FF00,$FF01 ; poke 65280, 65281 to sequential addresses`.
+    - `@label FDB $FF00        ; poke 65280 to this address`.
+    - `@label FDB $FF00,$FF01  ; poke 65280, 65281 to sequential addresses`.
     - **Note** The 6809 expects the most-significant byte at the lowest address.
-- `ORG` &mdash; start assembling at the supplied address, eg. `@label ORG $3FFF ; continue assembling at address 16383`.
+- `ORG` &mdash; continue assembly at the supplied address, eg. `@label ORG $3FFF ; continue assembly at address 16383`.
 
 ### Endianism ###
 
@@ -189,7 +191,7 @@ See below for a full list of *spasm* switches.
 | `-s` | `--start` | Set the start address of the assembled code, specified as a hex or decimal value.<br />**Note** You can use $ as a prefix for a hex value, but you will need to place the address in single quotes, eg. `spasm.py zzz.asm -s '$FF00'` to avoid confusing Bash |
 | `-b` | `--baseaddress` | Set the base address for disassembled code, specified as a hex or decimal value. Ignored during assembly |
 | `-n` | `--numbytes` | Set the number of bytes to disassemble, specified as a hex or decimal value. Ignored during assembly |
-| `-o` | `--output` | Cause the 6809 output file to be written and, optionally, name it. If you pass no name, the output file name will match the input file |
+| `-o` | `--output` | Cause the 6809 output file to be written and, optionally, name it. If you pass no name, the output file name will match that of the the input file but with a `.6809` extension |
 | `-l` | `--lower` | Display opcodes in lowercase |
 | `-u` | `--upper` | Display opcodes in uppercase.<br />**Note** This and the above switch will overwrite each other; if both are called: the last one wins. If neither is used, the output matches the input |
 
@@ -197,6 +199,7 @@ See below for a full list of *spasm* switches.
 
 - 1.2.0 &mdash; *unreleased*
     - Fully support `ORG` directive: assemble code into multiple chunks
+    - Add support for `FCC` directive: assemble code Ascii strings to bytes
     - `.6809` files' *code* field now contains a string of two-character hex values
     - Handle negative operands correctly
     - Check ops that expect an 8-bit value don't get a 16-bit value
@@ -212,4 +215,4 @@ See below for a full list of *spasm* switches.
 
 *spasm* is copyright © Tony Smith, 2019. The source code is released under the MIT licence.
 
-The 6809 instruction set architecture is copyright © 1977 Motorola.
+The 6809 instruction set architecture is copyright © 1977 Motorola/Freescale/NXP.

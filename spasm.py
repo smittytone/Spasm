@@ -242,7 +242,7 @@ def assemble_file(file_path):
         file_path (str): The path to a .asm file.
     '''
 
-    global pass_count, prog_count, code, labels, current_chunk
+    global pass_count, prog_count, code, labels, current_chunk, out_file
 
     # Clear the storage arrays
     lines = []
@@ -259,9 +259,7 @@ def assemble_file(file_path):
 
     if verbose is True: print("Processing file: " + os.path.abspath(file_path))
 
-    # Do the assembly in two passes
-    break_flag = False
-
+    # FROM 1.2.0
     # Create an initial code chunk and add it to the array
     chunk = {}
     chunk["address"] = start_address
@@ -273,31 +271,26 @@ def assemble_file(file_path):
         pass_count = asm_pass
         show_verbose("Assembly pass #" + str(asm_pass))
 
-        # Set the current code chunk
+        # Set the current code chunk - we will load further chunks, if any,
+        # as ORG directives are encountered in the code
         current_chunk = code[0]
         prog_count = current_chunk["address"]
 
         # Parse the lines one at a time
-        i = 0
-        for line in lines:
-            result = parse_line(line, i)
-            if result is False:
+        for i in range(0, len(lines)):
+            current_line = lines[i]
+
+            # Parse the current line
+            if parse_line(current_line, i) is False:
                 # Error in processing: print post
                 print("Processing error in line " + str(i + 1) + " -- halting assembly")
-                print(">>> " + line)
-                break_flag = True
-                # Break out of the line-by-line loop
-                break
-            i += 1
-        if break_flag is True:
-            # Break out of the pass-by-pass loop
-            break
+                print(">>> " + current_line)
+                return
 
     # Post-assembly, dump the machine code, provided there was no error
-
-    if verbose is True and break_flag is False:
-        print(" ")
-        print("Machine code dump")
+    if verbose is True:
+        print("\nMachine Code Dump")
+        print("----------------------------------------")
         for chunk in code:
             m_code = chunk["code"]
             line_address = chunk["address"]
@@ -314,12 +307,11 @@ def assemble_file(file_path):
             print(" ")
 
     # Write out the machine code file
-    if out_file is not None and break_flag is False:
+    if out_file is not None:
         if out_file == "*":
-            o_file, _ = os.path.splitext(file_path)
-            write_file(o_file + ".6809")
-        else:
-            write_file(out_file)
+            out_file, _ = os.path.splitext(file_path)
+            out_file += ".6809"
+        write_file(out_file)
 
 
 def parse_line(line, line_number):
@@ -352,7 +344,18 @@ def parse_line(line, line_number):
         comment = ";" + line_parts[len(line_parts) - 1]
         line = line_parts[0]
 
-    # Segment the line by spaces
+    # FROM 1.2.0
+    # Check for quoted strings (only double-quote demarcation for now)
+    quote = ""
+    quote_start = line.find('"')
+    if quote_start != -1:
+        line_parts = line.split('"', 1)
+        quote = line_parts[len(line_parts) - 1]
+        line = line_parts[0]
+        line_parts = quote.split('"', 1)
+        quote = '"' + line_parts[0] + '"'
+
+    # Segment the remaining line by spaces
     line_parts = line.split(" ")
 
     # Remove empty entries (ie. instances of multiple spaces)
@@ -363,6 +366,9 @@ def parse_line(line, line_number):
             line_parts.pop(j)
         else:
             j += 1
+
+    # Add back the quote, if any
+    if quote: line_parts.append(quote)
 
     # At this point, typical line might be:
     #   lineParts[0] = "@start_address"
@@ -567,6 +573,7 @@ def decode_opnd(an_opnd, line):
         # Calculate the operand for all other instructions
         if an_opnd == " ": an_opnd = ""
         if an_opnd:
+            quote_start = False
             # Operand string is not empty (it could be, eg. SWI) so process it char by char
             for op_char in an_opnd:
                 if op_char == ">":
@@ -593,8 +600,14 @@ def decode_opnd(an_opnd, line):
                                 error_message(8, line.line_number) # Bad operand
                                 return -1
                             break
-                    # Remove spaces and re-assemble string
+
+                    # FROM 1.2.0
+                    # Handle quotes
+                    if op_char == '"' and quote_start is False: quote_start = True
+
+                    # Remove un-quoted spaces and re-assemble string
                     if op_char != " " and op_char != '"': opnd_str += op_char
+                    if op_char == " " and quote_start is True: opnd_str += op_char
 
     if opnd_str and opnd_str[0] == "@":
         # Operand is a label
@@ -1207,7 +1220,7 @@ def write_code(line_parts, line):
 
         # Handle comment-only lines
         if line.comment_tab > 0:
-            print(SPACES[:55] + line_parts[0])
+            print(SPACES[:22] + line_parts[0])
             return True
 
         # First, add the 16-bit address
@@ -1243,10 +1256,22 @@ def write_code(line_parts, line):
         if len(line_parts) > 2: display_str += line_parts[2]
 
         # Add the comment, if there is one
-        if len(line_parts) > 3: display_str += (SPACES[:(55 - len(display_str))] + line_parts[3])
+        extra_str = ""
+        if len(line_parts) > 3 and len(line_parts[3]) > 1:
+            if len(display_str) > 54:
+                extra_str = display_str[55:]
+                display_str = display_str[:55]
+            display_str += (SPACES[:(58 - len(display_str))] + line_parts[3])
 
         # And output the line
         print(display_str)
+
+        # Output any sub-lines, if any, caused by 'comment squeeze'
+        if extra_str:
+            while len(extra_str) > 0:
+                print(SPACES[:41] + extra_str[:12])
+                extra_str = extra_str[12:]
+
     return True
 
 
@@ -1303,16 +1328,16 @@ def show_verbose(message):
     if verbose is True: print(message)
 
 
-def disassemble_file(file_spec):
+def disassemble_file(file_spec, mem_spec):
     '''
     Disassemble the specified .6809 or .rom file.
 
     Args:
         file_spec (str, bool): The path and the type of the file (True = .6809, False = .rom).
+        mem_spec  (int, int):  The base address and number of bytes to disassemble
     '''
 
-    global base_address, num_bytes
-
+    code_data = None
     file_data = None
     file_path = file_spec[0]
     file_type = file_spec[1]
@@ -1325,259 +1350,265 @@ def disassemble_file(file_spec):
         # This is a .6809 file, ie. a text representation of JSON, with
         # the code set to key 'code' and the start address set to key
         # 'address'
-        # FROM 1.2.0 The 'code' field is a string of two-character hex values,
-        #            which we now decode to a bytearray (as per a .rom read)
+
+        # FROM 1.2.0
+        # The 'code' field is a string of two-character hex values,
+        # which we now decode to a bytearray (as per a .rom read)
+        # And we need to deal with chunks in .6809 files
         with open(file_path, "r") as file: file_data = file.read()
-        data = json.loads(file_data)
-        loaded_code = data["code"]
-        code = bytearray()
-        for i in range(0, len(loaded_code), 2):
-            a_char = loaded_code[i:i+2]
-            a_int = int(a_char, 16)
-            code.extend(a_int.to_bytes(1, byteorder='big', signed=False))
-        address = data["address"]
-        if base_address == 0: base_address = address
-        if num_bytes == 0: num_bytes = len(code)
+        code_data = json.loads(file_data)
     else:
         # This is a .rom file, ie. just a binary data dump, so open it and
         # convert to a bytearray
         file = open(file_path, "rb")
         file_data = bytearray(file.read())
         file.close()
-        code = file_data
-        address = start_address
 
-    if code is not None:
-        # Prep the disassembly
-        # At this point 'code' is either a bytearray or a string, depending on
-        # the type of file opened
-        post_op_bytes = 0
-        opnd = 0
-        special_opnd = 0
-        pre_op_byte = 0
-        index_code = 0
-        address_mode = ADDR_MODE_NONE
-        line_str = ""
-        byte_str = ""
-        str_str = ""
-        index_str = ""
-        got_op = False
+        # FROM 1.2.0
+        # Put the data into chunk for processing
+        code_data = []
+        item = {}
+        item["code"] = file_data
+        item["address"] = start_address
+        code_data.append(item)
 
+    if code_data is not None:
+        # Disassemble the supplied set of chunks
         print("Address       Operation              Bytes          Ascii")
         print("---------------------------------------------------------")
-        # Run through the machine code byte by byte
-        for next_byte in code:
-            # Only proceed if we're in the required address range
-            if address < base_address or address > base_address + num_bytes:
-                address += 1
-                continue
 
-            # Assemble the byte string
-            byte_str += "{0:02X}".format(next_byte)
-            str_str += (chr(next_byte) if next_byte > 31 and next_byte < 128 else "_")
+        for chunk in code_data:
+            loaded_code = chunk["code"]
+            code = bytearray()
+            for i in range(0, len(loaded_code), 2):
+                a_char = loaded_code[i:i+2]
+                a_int = int(a_char, 16)
+                code.extend(a_int.to_bytes(1, byteorder='big', signed=False))
 
-            # Combine the current byte with the previous one, if that
-            # was 0x10 or 0x11 (ie. extended ISA)
-            if pre_op_byte != 0:
-                next_byte = (pre_op_byte << 8) + next_byte
-                pre_op_byte = 0
+            address = chunk["address"]
+            base_address = mem_spec[0] if mem_spec[0] != 0 else address
+            num_bytes = mem_spec[1] if mem_spec[1] != 0 else len(code)
 
-            found = False
-            the_op = ""
+            post_op_bytes = 0
+            pre_op_byte = 0
+            opnd = 0
+            special_opnd = 0
+            index_code = 0
+            address_mode = ADDR_MODE_NONE
+            line_str = ""
+            byte_str = ""
+            str_str = ""
+            index_str = ""
+            got_op = False
 
-            if got_op is False:
-                # Look for an op first
-                if next_byte in (0x10, 0x11):
-                    # Extended ISA indicator found, so hold for combination
-                    # with the next loaded byte of code
-                    pre_op_byte = next_byte
+            # Run through the machine code byte by byte
+            for next_byte in code:
+                # Only proceed if we're in the required address range
+                if address < base_address or address > base_address + num_bytes:
                     address += 1
                     continue
 
-                # Run through the main ISA to find the op
-                for i in range(0, len(ISA), 6):
-                    # Run through each op's possible op codes to find a match
-                    for j in range(i + 1, i + 6):
-                        if ISA[j] == next_byte:
-                            # Got it
-                            the_op = ISA[i]
-                            # Value of 'k' indicates which addressing mode we have
-                            address_mode = j - i
-                            found = True
-                            break
-                    if found is True:
-                        break
+                # Assemble the byte string
+                byte_str += "{0:02X}".format(next_byte)
+                str_str += (chr(next_byte) if next_byte > 31 and next_byte < 128 else "_")
 
-                if found is False:
-                    # Didn't match the byte in the main ISA, so check for a branch op
-                    for i in range(0, len(BSA), 3):
+                # Combine the current byte with the previous one, if that
+                # was 0x10 or 0x11 (ie. extended ISA)
+                if pre_op_byte != 0:
+                    next_byte = (pre_op_byte << 8) + next_byte
+                    pre_op_byte = 0
+
+                found = False
+                the_op = ""
+
+                if got_op is False:
+                    # Look for an op
+                    if next_byte in (0x10, 0x11):
+                        # Extended ISA indicator found, so hold for combination
+                        # with the next loaded byte of code
+                        pre_op_byte = next_byte
+                        address += 1
+                        continue
+
+                    # Run through the main ISA to find the op
+                    for i in range(0, len(ISA), 6):
                         # Run through each op's possible op codes to find a match
-                        for j in range(i + 1, i + 3):
-                            if BSA[j] == next_byte:
+                        for j in range(i + 1, i + 6):
+                            if ISA[j] == next_byte:
                                 # Got it
-                                the_op = BSA[i]
-                                # Correct the name of an extended branch op
-                                # Add 10 to 'address_mode' to indicate branching
-                                if j - i == 2: the_op = "L" + the_op
-                                address_mode = j - i + 10
+                                the_op = ISA[i]
+                                # Value of 'j' indicates which addressing mode we have
+                                address_mode = j - i
                                 found = True
                                 break
-                        if found is True:
-                            break
+                        if found is True: break
 
-                # If we still haven't matched the op, print a warning and bail
-                if found is False:
-                    print("Bad Op: " + "${0:02X}".format(next_byte))
+                    if found is False:
+                        # Didn't match the byte in the main ISA, so check for a branch op
+                        for i in range(0, len(BSA), 3):
+                            # Run through each op's possible op codes to find a match
+                            for j in range(i + 1, i + 3):
+                                if BSA[j] == next_byte:
+                                    # Got it
+                                    the_op = BSA[i]
+                                    # Correct the name of an extended branch op
+                                    # Add 10 to 'address_mode' to indicate branching
+                                    if j - i == 2: the_op = "L" + the_op
+                                    address_mode = j - i + 10
+                                    found = True
+                                    break
+                            if found is True: break
 
-                # Set the initial part of the output line
-                line_str = "${0:04X}".format(address) + "         " + the_op + "   "
+                    # If we still haven't matched the op, print a warning and bail
+                    if found is False: print("Bad Op: " + "${0:02X}".format(next_byte))
 
-                # Add a space for three-character opcodes
-                if len(the_op) < 5: line_str += set_spacer(5, len(the_op))
+                    # Set the initial part of the output line
+                    line_str = "${0:04X}".format(address) + "         " + the_op
+                    line_str += set_spacer(8, len(the_op))
 
-                # Gather the operand bytes (if any) according to addressing mode
-                if address_mode == ADDR_MODE_INHERENT:
-                    # There's no operand with inherent addressing, so just dump the line
-                    print(line_str + set_spacer(37, len(line_str)) + byte_str)
-                    address += 1
-                    byte_str = ""
-                elif address_mode == ADDR_MODE_IMMEDIATE:
-                    # Immediate addressing
-                    got_op = True
-                    post_op_bytes = 1
-                    address += 1
+                    # Gather the operand bytes (if any) according to addressing mode
+                    if address_mode == ADDR_MODE_INHERENT:
+                        # There's no operand with inherent addressing, so just dump the line
+                        print(line_str + set_spacer(37, len(line_str)) + byte_str)
+                        address += 1
+                        byte_str = ""
+                    elif address_mode == ADDR_MODE_IMMEDIATE:
+                        # Immediate addressing
+                        got_op = True
+                        post_op_bytes = 1
+                        address += 1
 
-                    # Does the immediate postbyte have a special value?
-                    # It will for PSH/PUL and TFR/EXG ops
-                    if the_op[:1] == "P":
-                        special_opnd = 1 if the_op[-1:] == "S" else 2
-                    elif the_op in ("TFR", "EXG"):
-                        special_opnd = 3
-                    else:
-                        # Set the number of operand bytes to gather to the byte-size of the
-                        # named register (eg. two bytes for 16-bit registers
-                        if the_op[-1:] in ("X", "Y", "D", "S", "U"): post_op_bytes = 2
-                        if the_op[-2:] == "PC": post_op_bytes = 2
+                        # Does the immediate postbyte have a special value?
+                        # It will for PSH/PUL and TFR/EXG ops
+                        if the_op[:1] == "P":
+                            special_opnd = 1 if the_op[-1:] == "S" else 2
+                        elif the_op in ("TFR", "EXG"):
+                            special_opnd = 3
+                        else:
+                            # Set the number of operand bytes to gather to the byte-size of the
+                            # named register (eg. two bytes for 16-bit registers
+                            if the_op[-1:] in ("X", "Y", "D", "S", "U"): post_op_bytes = 2
+                            if the_op[-2:] == "PC": post_op_bytes = 2
 
-                        # Add the # symbol it indicate addressing type
-                        line_str += "#$"
-                elif address_mode in (ADDR_MODE_DIRECT, ADDR_MODE_INDEXED, ADDR_MODE_EXTENDED):
-                    # Indexed, Direct and Extended addressing
-                    got_op = True
-                    post_op_bytes = 1
-                    address += 1
-                    if address_mode == ADDR_MODE_EXTENDED: post_op_bytes += 1
-                    if address_mode == ADDR_MODE_DIRECT: line_str += ">"
-                elif address_mode > 10:
-                    # Handle branch operation offset bytes
-                    got_op = True
-                    post_op_bytes = 2 if address_mode - 10 == BRANCH_MODE_LONG else 1
-                    address += 1
-            else:
-                # We are handling the operand bytes having found the op
-                # Check for the branching operations (short then long) first
-                if address_mode - 10 == BRANCH_MODE_SHORT:
-                    # 'next_byte' is an 8-bit branch offset
-                    target = 0
-                    if next_byte & 0x80 == 0x80:
-                        # Sign bit set
-                        target = address + 1 - (256 - next_byte)
-                    else:
-                        target = address + 1 + next_byte
-                    line_str += "${0:04X}".format(target)
-                elif address_mode - 10 == BRANCH_MODE_LONG:
-                    # 'next_byte' is part of a 16-bit branch offset
-                    if post_op_bytes > 0: opnd += (next_byte << (8 * (post_op_bytes - 1)))
-                    if post_op_bytes == 1:
+                            # Add the # symbol it indicate addressing type
+                            line_str += "#$"
+                    elif address_mode in (ADDR_MODE_DIRECT, ADDR_MODE_INDEXED, ADDR_MODE_EXTENDED):
+                        # Indexed, Direct and Extended addressing
+                        got_op = True
+                        post_op_bytes = 1
+                        address += 1
+                        if address_mode == ADDR_MODE_EXTENDED: post_op_bytes += 1
+                        if address_mode == ADDR_MODE_DIRECT: line_str += ">"
+                    elif address_mode > 10:
+                        # Handle branch operation offset bytes
+                        got_op = True
+                        post_op_bytes = 2 if address_mode - 10 == BRANCH_MODE_LONG else 1
+                        address += 1
+                else:
+                    # We are handling the operand bytes having found the op
+                    # Check for the branching operations (short then long) first
+                    if address_mode - 10 == BRANCH_MODE_SHORT:
+                        # 'next_byte' is an 8-bit branch offset
                         target = 0
-                        if opnd & 0x8000 == 0x8000:
+                        if next_byte & 0x80 == 0x80:
                             # Sign bit set
-                            target = address + 1 - (65535 - opnd)
+                            target = address + 1 - (256 - next_byte)
                         else:
-                            target = address + 1 + opnd
+                            target = address + 1 + next_byte
                         line_str += "${0:04X}".format(target)
-                elif address_mode == ADDR_MODE_IMMEDIATE and special_opnd > 0:
-                    # See above for the meanings of 'special_opnd'
-                    if special_opnd == 1:
-                        line_str += get_puls_pshs_regs(next_byte)
-                    elif special_opnd == 2:
-                        line_str += get_pulu_pshu_regs(next_byte)
-                    else:
-                        line_str += get_tfr_exg_regs(next_byte)
-                    special_opnd = 0
-                elif address_mode == ADDR_MODE_INDEXED:
-                    # 'index_code' is set according to the first post-op byte
-                    if index_code == 0:
-                        # Check for Indirect Indexed addressing
-                        is_indirect = False
-                        if next_byte & 0x10 == 0x10 and next_byte > 0x80: is_indirect = True
-
-                        # Get the named register from the first post-op byte (bits 5 & 6)
-                        reg = get_indexed_reg(next_byte)
-
-                        # Get the operation code from the first post-op byte (bits 0-4)
-                        code = next_byte & 0x0F
-                        if next_byte < 0x80:
-                            # Pull the 5-bit offset out of the post-op byte (bits 0-4)
-                            index_str = "${0:02X}".format(code) + "," + reg
-                        elif next_byte == 0x9F:
-                            # Extended indirect
-                            post_op_bytes = 2
-                            index_code = 3
-                        else:
-                            if code == 0x04: index_str = "," + reg
-                            if code in (0x08, 0x09):
-                                # 8-, 16-bit offset from reg
-                                index_str = "," + reg
-                                post_op_bytes += (code - 0x07)
-                                index_code = code - 0x07
-                            if code == 0x06: index_str = "A," + reg
-                            if code == 0x05: index_str = "B," + reg
-                            if code == 0x0B: index_str = "D," + reg
-                            if code == 0x00: index_str = "," + reg + "+"
-                            if code == 0x01: index_str = "," + reg + "++"
-                            if code == 0x02: index_str = ",-" + reg
-                            if code == 0x03: index_str = ",--" + reg
-                            if code in (0x0C, 0x0D):
-                                # Constant offset From PC
-                                index_str = ",PC"
-                                post_op_bytes += (code - 0x0B)
-                                index_code = code - 0x0B
-                        # Wrap the operand string in brackets to indicate indirection
-                        if is_indirect is True: index_str = "(" + index_str + ")"
-                    else:
-                        # Collect the extra byte(s) when 'index_code' is 1 or 2
+                    elif address_mode - 10 == BRANCH_MODE_LONG:
+                        # 'next_byte' is part of a 16-bit branch offset
                         if post_op_bytes > 0: opnd += (next_byte << (8 * (post_op_bytes - 1)))
                         if post_op_bytes == 1:
-                            if index_code < 3:
-                                format_str = "${0:0" + str(index_code * 2) + "X}"
-                                index_str = format_str.format(opnd) + index_str
+                            target = 0
+                            if opnd & 0x8000 == 0x8000:
+                                # Sign bit set
+                                target = address + 1 - (65535 - opnd)
                             else:
-                                index_str = "${0:04X}".format(opnd)
+                                target = address + 1 + opnd
+                            line_str += "${0:04X}".format(target)
+                    elif address_mode == ADDR_MODE_IMMEDIATE and special_opnd > 0:
+                        # See above for the meanings of 'special_opnd'
+                        if special_opnd == 1:
+                            line_str += get_puls_pshs_regs(next_byte)
+                        elif special_opnd == 2:
+                            line_str += get_pulu_pshu_regs(next_byte)
+                        else:
+                            line_str += get_tfr_exg_regs(next_byte)
+                        special_opnd = 0
+                    elif address_mode == ADDR_MODE_INDEXED:
+                        # 'index_code' is set according to the first post-op byte
+                        if index_code == 0:
+                            # Check for Indirect Indexed addressing
+                            is_indirect = False
+                            if next_byte & 0x10 == 0x10 and next_byte > 0x80: is_indirect = True
+
+                            # Get the named register from the first post-op byte (bits 5 & 6)
+                            reg = get_indexed_reg(next_byte)
+
+                            # Get the operation code from the first post-op byte (bits 0-4)
+                            code = next_byte & 0x0F
+                            if next_byte < 0x80:
+                                # Pull the 5-bit offset out of the post-op byte (bits 0-4)
+                                index_str = "${0:02X}".format(code) + "," + reg
+                            elif next_byte == 0x9F:
+                                # Extended indirect
+                                post_op_bytes = 2
+                                index_code = 3
+                            else:
+                                if code == 0x04: index_str = "," + reg
+                                if code in (0x08, 0x09):
+                                    # 8-, 16-bit offset from reg
+                                    index_str = "," + reg
+                                    post_op_bytes += (code - 0x07)
+                                    index_code = code - 0x07
+                                if code == 0x06: index_str = "A," + reg
+                                if code == 0x05: index_str = "B," + reg
+                                if code == 0x0B: index_str = "D," + reg
+                                if code == 0x00: index_str = "," + reg + "+"
+                                if code == 0x01: index_str = "," + reg + "++"
+                                if code == 0x02: index_str = ",-" + reg
+                                if code == 0x03: index_str = ",--" + reg
+                                if code in (0x0C, 0x0D):
+                                    # Constant offset From PC
+                                    index_str = ",PC"
+                                    post_op_bytes += (code - 0x0B)
+                                    index_code = code - 0x0B
+                            # Wrap the operand string in brackets to indicate indirection
                             if is_indirect is True: index_str = "(" + index_str + ")"
-                else:
-                    # Pick up any other mode (including plain immediate addressing) and output a value
-                    if post_op_bytes > 0: opnd += (next_byte << (8 * (post_op_bytes - 1)))
-                    line_str += "{0:02X}".format(next_byte)
+                        else:
+                            # Collect the extra byte(s) when 'index_code' is 1 or 2
+                            if post_op_bytes > 0: opnd += (next_byte << (8 * (post_op_bytes - 1)))
+                            if post_op_bytes == 1:
+                                if index_code < 3:
+                                    format_str = "${0:0" + str(index_code * 2) + "X}"
+                                    index_str = format_str.format(opnd) + index_str
+                                else:
+                                    index_str = "${0:04X}".format(opnd)
+                                if is_indirect is True: index_str = "(" + index_str + ")"
+                    else:
+                        # Pick up any other mode (including plain immediate addressing) and output a value
+                        if post_op_bytes > 0: opnd += (next_byte << (8 * (post_op_bytes - 1)))
+                        line_str += "{0:02X}".format(next_byte)
 
-                # Decrement the operand bytes counter,
-                # and increase the current memory address
-                post_op_bytes -= 1
-                address += 1
+                    # Decrement the operand bytes counter,
+                    # and increase the current memory address
+                    post_op_bytes -= 1
+                    address += 1
 
-                if post_op_bytes == 0:
-                    # We've got all the operand bytes we need, so output the line
-                    # and zero key variables
-                    line_str += index_str
-                    space_str = set_spacer(37, len(line_str))
-                    print_str = line_str + space_str + byte_str
-                    print(print_str + set_spacer(52, len(print_str)) + str_str)
-                    got_op = False
-                    index_code = 0
-                    opnd = 0
-                    byte_str = ""
-                    str_str = ""
-                    index_str = ""
+                    if post_op_bytes == 0:
+                        # We've got all the operand bytes we need, so output the line
+                        # and zero key variables
+                        line_str += index_str
+                        space_str = set_spacer(37, len(line_str))
+                        print_str = line_str + space_str + byte_str
+                        print(print_str + set_spacer(52, len(print_str)) + str_str)
+                        got_op = False
+                        index_code = 0
+                        opnd = 0
+                        byte_str = ""
+                        str_str = ""
+                        index_str = ""
 
 
 def set_spacer(a_max, a_min):
@@ -1586,7 +1617,7 @@ def set_spacer(a_max, a_min):
 
     Args:
         a_max (int): The length of the padded line.
-        a_min (int): The length of the unpadded line.
+        a_min (int): The length of the un-padded line.
 
     Returns:
         str: A string of spaces to pad the line.
@@ -1765,6 +1796,7 @@ def get_files():
         if file_ext == ".asm": asm_files.append(file)
         if file_ext in (".6809", ".rom"): dis_files.append(file)
 
+    # Display file type breakdown
     asm_count = len(asm_files)
     if asm_count == 1:
         show_verbose("Processing 1 .asm file in " + current_dir)
@@ -1781,6 +1813,7 @@ def get_files():
     else:
         show_verbose("No suitable .6809 files found in " + current_dir)
 
+    # Process the files
     handle_files(asm_files)
     handle_files(dis_files)
 
@@ -1795,10 +1828,8 @@ def handle_files(the_files=None):
 
     if the_files:
         for file in the_files:
-            print(file)
             if file[-2:] == "sm": assemble_file(file)
-            if file[-1:] == "9": disassemble_file((file, True))
-            if file[-2:] == "om": disassemble_file((file, False))
+            if file[-2:] in ("09", "om"): disassemble_file((file, True), (base_address, num_bytes))
 
 
 if __name__ == '__main__':
