@@ -559,7 +559,7 @@ def decode_opnd(an_opnd, line):
             quote_start = False
             # Operand string is not empty (it could be, eg. SWI) so process it char by char
             for op_char in an_opnd:
-                if op_char == ">":
+                if op_char == "<":
                     # Direct addressing
                     line.op_type = ADDR_MODE_DIRECT
                     line.expects_8b_opnd = True
@@ -864,7 +864,7 @@ def decode_indexed(opnd, line):
     # Decode the left side of the operand
     left = parts[0]
     if left:
-        if left[0] == "(":
+        if left[0] == "[":
             # Addressing mode is Indirect Indexed, eg. LDA (5,PC)
             line.is_indirect = True
             opnd_value = 0x10
@@ -920,7 +920,7 @@ def decode_indexed(opnd, line):
     # Decode the right side of the operand
     right = parts[1]
     # Remove right hand bracket (indirect) if present
-    if right[-1] == ")": right = right[:-1]
+    if right[-1] == "]": right = right[:-1]
     # Operand is of the 'n,PCR' type - just set bit 2
     if right[:2].upper() == "PC": opnd_value += 4
     if right[-1:] == "+":
@@ -1436,7 +1436,7 @@ def disassemble_file(file_spec):
                         post_op_bytes = 1
                         address += 1
                         if address_mode == ADDR_MODE_EXTENDED: post_op_bytes += 1
-                        if address_mode == ADDR_MODE_DIRECT: line_str += ">"
+                        if address_mode == ADDR_MODE_DIRECT: line_str += "<"
                     elif address_mode > 10:
                         # Handle branch operation offset bytes
                         got_op = True
@@ -1511,7 +1511,7 @@ def disassemble_file(file_spec):
                                     post_op_bytes += (code - 0x0B)
                                     index_code = code - 0x0B
                             # Wrap the operand string in brackets to indicate indirection
-                            if is_indirect is True: index_str = "(" + index_str + ")"
+                            if is_indirect is True: index_str = "[" + index_str + "]"
                         else:
                             # Collect the extra byte(s) when 'index_code' is 1 or 2
                             if post_op_bytes > 0: opnd += (next_byte << (8 * (post_op_bytes - 1)))
@@ -1521,7 +1521,7 @@ def disassemble_file(file_spec):
                                     index_str = format_str.format(opnd) + index_str
                                 else:
                                     index_str = "${0:04X}".format(opnd)
-                                if is_indirect is True: index_str = "(" + index_str + ")"
+                                if is_indirect is True: index_str = "[" + index_str + "]"
                     else:
                         # Pick up any other mode (including plain immediate addressing) and output a value
                         if post_op_bytes > 0: opnd += (next_byte << (8 * (post_op_bytes - 1)))
