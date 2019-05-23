@@ -63,7 +63,7 @@ As the above example shows, *spasm* supports the use of labels to represent valu
 
 ### Comments ###
 
-Comments can be entered by prefixing them with a `;`. At this time, multi-line comment indicators have not yet been implemented.
+Comments can be entered by prefixing them with a `;` or `*` (for DREAM fans). At this time, multi-line comment indicators have not yet been implemented.
 
 ### Directives ###
 
@@ -186,8 +186,8 @@ See below for a full list of *spasm* switches.
 | Option | Alternative&nbsp;&nbsp;&nbsp;&nbsp; | Action |
 | :-: | :-- | :-- |
 | `-h` | `--help` | Print help information |
-| `-v` | `--verbose` | Display extra information during assembly. This is the default |
-| `-q` | `--quiet` | Display no extra information during assembly. This always overrides verbose mode |
+| `-v` | `--version` | Display *spasm* version information |
+| `-q` | `--quiet` | Display no extra information during assembly. This overrides verbose mode, which is the default |
 | `-s` | `--start` | Set the start address of the assembled code, specified as a hex or decimal value.<br />**Note** You can use $ as a prefix for a hex value, but you will need to place the address in single quotes, eg. `spasm.py zzz.asm -s '$FF00'` to avoid confusing Bash |
 | `-b` | `--baseaddress` | Set the base address for disassembled code, specified as a hex or decimal value. Ignored during assembly |
 | `-n` | `--numbytes` | Set the number of bytes to disassemble, specified as a hex or decimal value. Ignored during assembly |
@@ -198,16 +198,21 @@ See below for a full list of *spasm* switches.
 ## Release Notes ##
 
 - 1.2.0 &mdash; *unreleased*
-    - Fully support `ORG` directive: assemble code into multiple chunks
-    - Add support for `FCC` directive: assemble code Ascii strings to bytes
-    - `.6809` files' *code* field now contains a string of two-character hex values
-    - Handle negative operands correctly
-    - Check ops that expect an 8-bit value don't get a 16-bit value
-    - Correct address increments during disassembly of extended opcodes
+    - *Improvements*
+        - Fully support `ORG` directive: assemble code into multiple chunks.
+        - Add support for `FCC` directive: assemble code Ascii strings to bytes.
+        - `.6809` files' *code* field now contains a string of two-character hex values.
+        - Change `-v` switch to present version info (as verbose mode is default)
+    *Bug Fixes*
+        - Handle negative operands correctly.
+        - Handle indirect extended addressing correctly.
+        - Check ops that expect an 8-bit value don't get a 16-bit value.
+        - Correct address increments during disassembly of extended opcodes.
 - 1.1.0 &mdash; *30 April 2019*
-    - Add disassembly of `.rom` files.
-    - Add `-n` switch to set number of bytes of code to be disassembled.
-    - Add `-b` switch to set base address of disassembly.
+    - *Improvements*
+        - Add disassembly of `.rom` files.
+        - Add `-n` switch to set number of bytes of code to be disassembled.
+        - Add `-b` switch to set base address of disassembly.
 - 1.0.0 &mdash; *12 April 2019*
     - Initial public release.
 
