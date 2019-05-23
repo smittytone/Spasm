@@ -25,7 +25,8 @@ import json
 # Application-specific constants                                         #
 ##########################################################################
 
-SPACES = "                                                         "
+VERSION = "1.2.0"
+
 ERRORS = {"0": "No error",
           "1": "Bad mnemonic/opcode",
           "2": "Duplicate label",
@@ -338,6 +339,12 @@ def parse_line(line, line_number):
         line_parts = line.split(";", 1)
         comment = ";" + line_parts[len(line_parts) - 1]
         line = line_parts[0]
+    comment_start = line.find("*")
+    if comment_start != -1:
+        # Found a comment line so re-position it
+        line_parts = line.split("*", 1)
+        comment = "*" + line_parts[len(line_parts) - 1]
+        line = line_parts[0]
 
     # FROM 1.2.0: Check for quoted strings (only double-quotes for now)
     quote = ""
@@ -574,7 +581,7 @@ def decode_opnd(an_opnd, line):
                     # Convert value internally as hex
                     if op_char == "$": op_char = "0x"
                     # Operand could use indexed addressing or be a FCB/FDB value list
-                    if op_char == ",":
+                    if op_char == "," or op_char == "[":
                         if line.pseudo_op_type == 0:
                             # It's an indexed addressing operand, so decode it
                             opnd_str = decode_indexed(an_opnd, line)
@@ -858,7 +865,9 @@ def decode_indexed(opnd, line):
     '''
     line.op_type = ADDR_MODE_INDEXED
     opnd_value = 0
+    reg = 0
     byte_value = -1
+    is_extended = False
     parts = opnd.split(',')
 
     # Decode the left side of the operand
@@ -867,9 +876,10 @@ def decode_indexed(opnd, line):
         if left[0] == "[":
             # Addressing mode is Indirect Indexed, eg. LDA (5,PC)
             line.is_indirect = True
+            is_extended = True
             opnd_value = 0x10
             # Remove front bracket
-            left = left[1:]
+            left = left[1:-1]
 
         # Decode left of comma: check for specific registers first
         # as these are fixed values in the ISA
@@ -917,40 +927,39 @@ def decode_indexed(opnd, line):
         # Nothing left of the comma
         opnd_value = 0x84
 
-    # Decode the right side of the operand
-    right = parts[1]
-    # Remove right hand bracket (indirect) if present
-    if right[-1] == "]": right = right[:-1]
-    # Operand is of the 'n,PCR' type - just set bit 2
-    if right[:2].upper() == "PC": opnd_value += 4
-    if right[-1:] == "+":
-        if right[-2:] == "++": # ',R++'
-            opnd_value = 0x91 if line.is_indirect else 0x81
-        else:
-            # ',R+' is not allowed with indirection
-            if line.is_indirect is True: return ""
-            opnd_value = 0x80
-        # Set the analysed string to the register
-        right = right[0]
-        # Ignore any prefix value
-        byte_value = -1
-    if right[0] == "-":
-        if right[1] == "-": # ',--R'
-            opnd_value = 0x93 if line.is_indirect else 0x83
-        else:
-            # ',-R' is not allowed with indirection
-            if line.is_indirect is True: return ""
-            opnd_value = 0x82
-        # Set the analysed string to the register
-        right = right[-1]
-        # Ignore any prefix value
-        byte_value = -1
-
-    # Add in the register value (assume X, which equals 0 in the register coding)
-    reg = 0
-    if right.upper() == "Y": reg = 0x20
-    if right.upper() == "U": reg = 0x40
-    if right.upper() == "S": reg = 0x60
+    if is_extended is False:
+        # Decode the right side of the operand
+        right = parts[1]
+        # Remove right hand bracket (indirect) if present
+        if right[-1] == "]": right = right[:-1]
+        # Operand is of the 'n,PCR' type - just set bit 2
+        if right[:2].upper() == "PC": opnd_value += 4
+        if right[-1:] == "+":
+            if right[-2:] == "++": # ',R++'
+                opnd_value = 0x91 if line.is_indirect else 0x81
+            else:
+                # ',R+' is not allowed with indirection
+                if line.is_indirect is True: return ""
+                opnd_value = 0x80
+            # Set the analysed string to the register
+            right = right[0]
+            # Ignore any prefix value
+            byte_value = -1
+        if right[0] == "-":
+            if right[1] == "-": # ',--R'
+                opnd_value = 0x93 if line.is_indirect else 0x83
+            else:
+                # ',-R' is not allowed with indirection
+                if line.is_indirect is True: return ""
+                opnd_value = 0x82
+            # Set the analysed string to the register
+            right = right[-1]
+            # Ignore any prefix value
+            byte_value = -1
+        # Add in the register value (assume X, which equals 0 in the register coding)
+        if right.upper() == "Y": reg = 0x20
+        if right.upper() == "U": reg = 0x40
+        if right.upper() == "S": reg = 0x60
 
     # Store the index data for later
     line.index_address = byte_value
@@ -1163,12 +1172,12 @@ def write_code(line_parts, line):
 
         if line.line_number == 0:
             # Print the header on the first line
-            print("Address   Bytes       Label" + SPACES[:(label_len - 5)] + "   Op.      Data")
+            print("Address   Bytes       Label" + set_spacer(label_len, 5) + "   Op.      Data")
             print("-----------------------------------------------")
 
         # Handle comment-only lines
         if line.comment_start > 0:
-            print(SPACES[:22] + line_parts[0])
+            print(set_spacer(22) + line_parts[0])
             return True
 
         # First, add the 16-bit address
@@ -1187,10 +1196,10 @@ def write_code(line_parts, line):
             display_str = "          "
 
         # Add the lines assembled machine code
-        display_str += (byte_str + SPACES[:(10 - len(byte_str))] + "  ")
+        display_str += (byte_str + set_spacer(10, len(byte_str)) + "  ")
 
         # Add the label name - or spaces in its place
-        display_str += (line_parts[0] + SPACES[:(label_len - len(line_parts[0]))] + "   ")
+        display_str += (line_parts[0] + set_spacer(label_len, len(line_parts[0])) + "   ")
 
         # Add the op
         op_str = line_parts[1]
@@ -1198,7 +1207,7 @@ def write_code(line_parts, line):
             op_str = op_str.upper()
         elif app_state.show_upper == 2:
             op_str = op_str.lower()
-        display_str += (op_str + SPACES[:(5 - len(line_parts[1]))] + "    ")
+        display_str += (op_str + set_spacer(5, len(line_parts[1])) + "    ")
 
         # Add the operand
         if len(line_parts) > 2: display_str += line_parts[2]
@@ -1209,7 +1218,7 @@ def write_code(line_parts, line):
             if len(display_str) > 54:
                 extra_str = display_str[55:]
                 display_str = display_str[:55]
-            display_str += (SPACES[:(58 - len(display_str))] + line_parts[3])
+            display_str += (set_spacer(58, len(display_str)) + line_parts[3])
 
         # And output the line
         print(display_str)
@@ -1217,7 +1226,7 @@ def write_code(line_parts, line):
         # Output any sub-lines, if any, caused by 'comment squeeze'
         if extra_str:
             while extra_str:
-                print(SPACES[:41] + extra_str[:12])
+                print(set_spacer(41) + extra_str[:12])
                 extra_str = extra_str[12:]
     return True
 
@@ -1547,7 +1556,7 @@ def disassemble_file(file_spec):
                         index_str = ""
 
 
-def set_spacer(a_max, a_min):
+def set_spacer(a_max, a_min=0):
     '''
     Determing the number of spaces to pad a printed line.
 
@@ -1558,10 +1567,11 @@ def set_spacer(a_max, a_min):
     Returns:
         str: A string of spaces to pad the line.
     '''
+    spaces = "                                                         "
     num = a_max - a_min
     # If the line is too long, just return a couple of spaces
     if num < 1: return "  "
-    return SPACES[:num]
+    return spaces[:num]
 
 
 def get_indexed_reg(byte_value):
@@ -1755,10 +1765,10 @@ def show_help():
     print("or disassemble specific files by providing them as arguments.")
     print(" ")
     print("Options:")
-    print(" -h / --help         - print help information.")
-    print(" -v / --verbose      - display extra information during assembly.")
-    print(" -q / --quiet        - display no extra information during assembly.")
-    print("                       NOTE always overrides -v / -- verbose.")
+    print(" -h / --help         - Print spasm help information (this screen).")
+    print(" -v / --version      - Display spasm version information.")
+    print(" -q / --quiet        - Display no extra information during assembly.")
+    print("                       NOTE Verbose mode is the default.")
     print(" -s / --startaddress - Set the start address of the (dis)assembled code,")
     print("                       specified as a hex or decimal value.")
     print(" -b / --baseaddress  - Set the base address of disassembled code,")
@@ -1774,6 +1784,15 @@ def show_help():
     print(" ")
 
 
+def show_version():
+    '''
+    Display Spasm's version
+    '''
+    print(" ")
+    print("SPASM " + VERSION)
+    print("SPASM copyright (c) 2019 Tony Smith (@smittytone)")
+
+
 if __name__ == '__main__':
     # Do we have any arguments?
     if len(sys.argv) > 1:
@@ -1784,20 +1803,18 @@ if __name__ == '__main__':
         for index, item in enumerate(sys.argv):
             if arg_flag is True:
                 arg_flag = False
-            elif item in ("-v", "--verbose"):
-                # Handle the -v / --verbose switch
-                app_state.verbose = True
+            elif item in ("-v", "--version"):
+                show_version()
             elif item in ("-q", "--quiet"):
-                # Handle the -q / --quiet switch
                 app_state.verbose = False
             elif item in ("-u", "--upper"):
-                # Handle the -u / --upper switch
                 app_state.show_upper = 1
             elif item in ("-l", "--lower"):
-                # Handle the -l / --lower switch
                 app_state.show_upper = 2
+            elif item in ("-h", "--help"):
+                show_help()
+                sys.exit(0)
             elif item in ("-s", "--startaddress"):
-                # Handle the -s / --startaddress switch
                 if index + 1 >= len(sys.argv):
                     print("[ERROR] -s / --startaddress must be followed by an address")
                     sys.exit(1)
@@ -1808,10 +1825,6 @@ if __name__ == '__main__':
                 app_state.start_address = address
                 show_verbose("Code start address set to 0x{0:04X}".format(address))
                 arg_flag = True
-            elif item in ("-h", "--help"):
-                # Handle the -h / --help switch
-                show_help()
-                sys.exit(0)
             elif item in ("-o", "--outfile"):
                 if index + 1 >= len(sys.argv) or sys.argv[index + 1][0] == "-":
                     app_state.out_file = "*"
@@ -1826,7 +1839,6 @@ if __name__ == '__main__':
                     if parts == 1: app_state.out_file += ".6809"
                     arg_flag = True
             elif item in ("-n", "--numbytes"):
-                # Handle the -n / --numbytes switch
                 if index + 1 >= len(sys.argv):
                     print("[ERROR] -n / --numbytes must be followed by an integer value")
                     sys.exit(1)
@@ -1838,7 +1850,6 @@ if __name__ == '__main__':
                 show_verbose("Number of disassembly bytes set to " + str(number))
                 arg_flag = True
             elif item in ("-b", "--base"):
-                # Handle the -b / --baseaddress switch
                 if index + 1 >= len(sys.argv):
                     print("[ERROR] -b / --baseaddress must be followed by an address")
                     sys.exit(1)
