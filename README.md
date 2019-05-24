@@ -54,8 +54,7 @@ Various literal types are supported. Literals are assumed to be decimal, but you
 
 - `%` &mdash; a binary value, eg. `%10001111` (equals `0x8F`, 143).
 - `'` &mdash; an 8-bit Ascii value, eg. `'A` (equals `0x41`, 65).
-- `$` &mdash; a hexadecimal value, eg, `$FF00` (equals 65280).
-    **Note** *spasm* can also read hexadecimal values prefixed with `0x` for modern users, but `$` is the classic Motorola prefix.
+- `$` &mdash; a hexadecimal value, eg, `$FF00` (equals 65280).<br />**Note** *spasm* can also read hexadecimal values prefixed with `0x` for modern users, but `$` is the classic Motorola prefix.
 
 ### Labels ###
 
@@ -202,8 +201,8 @@ See below for a full list of *spasm* switches.
         - Fully support `ORG` directive: assemble code into multiple chunks.
         - Add support for `FCC` directive: assemble code Ascii strings to bytes.
         - `.6809` files' *code* field now contains a string of two-character hex values.
-        - Change `-v` switch to present version info (as verbose mode is default)
-    *Bug Fixes*
+        - Change `-v` switch to present version info (as verbose mode is default).
+    - *Bug Fixes*
         - Handle negative operands correctly.
         - Handle indirect extended addressing correctly.
         - Check ops that expect an 8-bit value don't get a 16-bit value.
