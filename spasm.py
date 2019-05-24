@@ -695,12 +695,13 @@ def process_pseudo_op(line_parts, line):
     opnd_value = line.opnd
     label_name = line_parts[0]
     if label_name == " ": label_name = ""
+    idx = index_of_label(label_name)
 
     if line.pseudo_op_type == 1:
         # EQU: assign the operand value to the label declared immediately
-        # before the EQU op
+        # before the EQU op. MUST have a label
+        if idx == -1: return False
         if app_state.pass_count == 1:
-            idx = index_of_label(label_name)
             label = app_state.labels[idx]
             label["addr"] = opnd_value
             show_verbose("Label " + label_name + " set to 0x" + "{0:04X}".format(opnd_value) + " (line " + str(line.line_number + 1) + ")")
@@ -709,29 +710,23 @@ def process_pseudo_op(line_parts, line):
     if line.pseudo_op_type == 2:
         # RMB: Reserve the next 'opnd_value' bytes and set the label to the current
         # value of the programme counter
-        idx = index_of_label(label_name)
         if idx != -1:
             label = app_state.labels[idx]
             label["addr"] = app_state.prog_count
-
         if app_state.pass_count == 1:
             show_verbose(str(opnd_value) + " bytes reserved at address 0x" + "{0:04X}".format(app_state.prog_count) + " (line " + str(line.line_number + 1) + ")")
-
         for i in range(app_state.prog_count, app_state.prog_count + opnd_value): poke(i, 0x12)
         result = write_code(line_parts, line)
         app_state.prog_count += opnd_value
 
     if line.pseudo_op_type == 3:
         # FCB: Pokes 'opnd_value' into the current byte and sets the label to the
-        # address of that byte. 'opnd_value' must be an 8-bit value
-        idx = index_of_label(label_name)
+        # address of that byte. 'opnd_value' must be an 8-bit value or comma-separated list of said
         if idx != -1:
             label = app_state.labels[idx]
             label["addr"] = app_state.prog_count
-
         if line.pseudo_op_value:
-            # Multiple bytes to poke in, in the form of a hex string
-            # This is set in 'decode_opnd'
+            # Multiple bytes to poke in, in the form of a hex string, set in 'decode_opnd'
             count = 0
             for i in range(0, len(line.pseudo_op_value), 2):
                 byte = line.pseudo_op_value[i:i+2]
@@ -758,7 +753,6 @@ def process_pseudo_op(line_parts, line):
     if line.pseudo_op_type == 4:
         # FDB: Pokes the MSB of 'opnd_value' into the current byte and the LSB into
         # the next byte and sets the label to the address of the first byte.
-        idx = index_of_label(label_name)
         if idx != -1:
             label = app_state.labels[idx]
             label["addr"] = app_state.prog_count
@@ -817,7 +811,6 @@ def process_pseudo_op(line_parts, line):
         app_state.prog_count = opnd_value
         result = write_code(line_parts, line)
         if label_name:
-            idx = index_of_label(label_name)
             label = app_state.labels[idx]
             label["addr"] = opnd_value
             if app_state.pass_count == 1:
