@@ -187,7 +187,6 @@ BSA = (
     "BSR", 0x8D, 0x17
 )
 
-
 ##########################################################################
 # Application-specific classes                                           #
 ##########################################################################
@@ -211,7 +210,6 @@ class LineData:
         self.is_indirect = False
         self.is_indexed = False
         self.expects_8b_opnd = False # ADDED 1.2.0
-
 
 class AppState:
     '''
@@ -407,11 +405,14 @@ def parse_line(line, line_number):
                 # Set the label address
                 label["addr"] = app_state.prog_count
                 # Output the label valuation
-                show_verbose("Label " + label["name"] + " set to 0x" + "{0:04X}".format(app_state.prog_count) + " (line " + str(line_number + 1) + ")")
+                show_verbose("Label " + label["name"] + " set to 0x" +
+                    to_hex(app_state.prog_count, 4) + " (line " + str(line_number + 1) + ")")
         else:
             # Record the newly found label
             app_state.labels.append({"name": label, "addr": app_state.prog_count})
-            if app_state.pass_count == 1: show_verbose("Label " + label + " found on line " + str(line_number + 1))
+            if app_state.pass_count == 1:
+                show_verbose("Label " + label + " found and set to 0x" + to_hex(app_state.prog_count, 4) +
+                    " (line " + str(line_number + 1) + ")")
     else:
         # Not a label, so insert a blank - ie. ensure the op will be in lineParts[1]
         line_parts.insert(0, " ")
@@ -606,7 +607,7 @@ def decode_opnd(an_opnd, line):
 
             # Make a new label
             app_state.labels.append({"name": opnd_str, "addr": "UNDEF"})
-            show_verbose("Label " + opnd_str + " found on line " + str(line.line_number + 1))
+            show_verbose("Label " + opnd_str + " found (line " + str(line.line_number + 1) + ")")
             opnd_str = "UNDEF"
         else:
             label = app_state.labels[index]
@@ -623,8 +624,8 @@ def decode_opnd(an_opnd, line):
             if len(parts) > 1:
                 # We have a list of values. Convert them to hex bytes for internal processing
                 byte_string = ""
-                format_str = "{0:02X}" if line.pseudo_op_type == 3 else "{0:04X}"
-                for part in parts: byte_string += format_str.format(get_int_value(part))
+                byte_count = 2 if line.pseudo_op_type == 3 else 4
+                for part in parts: byte_string += to_hex(get_int_value(part), byte_count)
                 # Preserve the byte string for later then bail
                 line.pseudo_op_value = byte_string
                 opnd_value = 0
@@ -695,102 +696,99 @@ def process_pseudo_op(line_parts, line):
     opnd_value = line.opnd
     label_name = line_parts[0]
     if label_name == " ": label_name = ""
-    idx = index_of_label(label_name)
+    label_idx = index_of_label(label_name)
 
     if line.pseudo_op_type == 1:
         # EQU: assign the operand value to the label declared immediately
         # before the EQU op. MUST have a label
-        if idx == -1: return False
+        if label_idx == -1: return False
         if app_state.pass_count == 1:
-            label = app_state.labels[idx]
+            label = app_state.labels[label_idx]
             label["addr"] = opnd_value
-            show_verbose("Label " + label_name + " set to 0x" + "{0:04X}".format(opnd_value) + " (line " + str(line.line_number + 1) + ")")
+            show_verbose("Label " + label_name + " set to 0x" +
+                to_hex(opnd_value) + " (line " + str(line.line_number + 1) + ")")
         result = write_code(line_parts, line)
 
     if line.pseudo_op_type == 2:
         # RMB: Reserve the next 'opnd_value' bytes and set the label to the current
         # value of the programme counter
-        if idx != -1:
-            label = app_state.labels[idx]
+        if label_idx != -1:
+            label = app_state.labels[label_idx]
             label["addr"] = app_state.prog_count
         if app_state.pass_count == 1:
-            show_verbose(str(opnd_value) + " bytes reserved at address 0x" + "{0:04X}".format(app_state.prog_count) + " (line " + str(line.line_number + 1) + ")")
+            show_verbose(str(opnd_value) + " bytes reserved at address 0x" +
+                to_hex(app_state.prog_count, 4) + " (line " + str(line.line_number + 1) + ")")
         for i in range(app_state.prog_count, app_state.prog_count + opnd_value): poke(i, 0x12)
         result = write_code(line_parts, line)
         app_state.prog_count += opnd_value
 
     if line.pseudo_op_type == 3:
-        # FCB: Pokes 'opnd_value' into the current byte and sets the label to the
-        # address of that byte. 'opnd_value' must be an 8-bit value or comma-separated list of said
-        if idx != -1:
-            label = app_state.labels[idx]
+        # FCB: Pokes 'opnd_value' (1 byte) or 'pseudo_op_value' (x bytes) at the
+        # current byte. Sets a label, if present, to the address of the first byte
+        if label_idx != -1:
+            label = app_state.labels[label_idx]
             label["addr"] = app_state.prog_count
         if line.pseudo_op_value:
-            # Multiple bytes to poke in, in the form of a hex string, set in 'decode_opnd'
+            # Multiple bytes to poke in, in the form of a hex string
             count = 0
             for i in range(0, len(line.pseudo_op_value), 2):
                 byte = line.pseudo_op_value[i:i+2]
                 if i == 0:
                     line.opnd = int(byte, 16)
+                    # Write out the sequence's first byte value
                     result = write_code(line_parts, line)
                 elif app_state.pass_count == 2:
-                    print("0x{0:04X}".format(app_state.prog_count) + "    " + byte)
+                    # Write out the sequence's subsequent bytes
+                    print("          0x" + to_hex(app_state.prog_count, 4) + "    " + byte)
                 poke(app_state.prog_count, int(byte, 16))
                 app_state.prog_count += 1
                 count += 1
             if app_state.pass_count == 1:
-                show_verbose(str(count) + " bytes written at 0x" + "{0:04X}".format(app_state.prog_count - count) + " (line " + str(line.line_number + 1) + ")")
+                show_verbose(str(count) + " bytes written at 0x" +
+                    to_hex(app_state.prog_count - count, 4) +
+                    " (line " + str(line.line_number + 1) + ")")
         else:
-            # Only a single byte to drop in
-            # This is set in 'decode_opnd'
+            # Just a single byte to drop in
             opnd_value = opnd_value & 0xFF
             poke(app_state.prog_count, opnd_value)
             if app_state.pass_count == 1:
-                show_verbose("The byte at 0x" + "{0:04X}".format(app_state.prog_count) + " set to 0x" + "{0:02X}".format(opnd_value) + " (line " + str(line.line_number + 1) + ")")
+                show_verbose("The byte at 0x" + to_hex(app_state.prog_count, 4) + " set to 0x" +
+                    to_hex(opnd_value) + " (line " + str(line.line_number + 1) + ")")
             result = write_code(line_parts, line)
             app_state.prog_count += 1
 
     if line.pseudo_op_type == 4:
         # FDB: Pokes the MSB of 'opnd_value' into the current byte and the LSB into
-        # the next byte and sets the label to the address of the first byte.
-        if idx != -1:
-            label = app_state.labels[idx]
+        # the next byte. Sets the label to the address of the first byte.
+        if label_idx != -1:
+            label = app_state.labels[label_idx]
             label["addr"] = app_state.prog_count
         if line.pseudo_op_value:
-            # Multiple bytes to poke in, in the form of a hex string (set in 'decode_opnd')
-            count = 0
-            initial = 0
-            byte_str = ""
-            for i in range(0, len(line.pseudo_op_value), 2):
-                byte = line.pseudo_op_value[i:i+2]
-                byte_str += byte
-                count += 1
+            # Multiple bytes to poke in, in the form of a hex string
+            byte_count = 0
+            for i in range(0, len(line.pseudo_op_value), 4):
+                byte = line.pseudo_op_value[i:i+4]
+                byte_count = i
                 if i == 0:
-                    initial = int(byte, 16) << 8
-                elif i == 2:
-                    initial += int(byte, 16)
-                    line.opnd = initial
+                    line.opnd = int(byte, 16)
                     result = write_code(line_parts, line)
-                    byte_str = ""
-                elif app_state.pass_count == 2 and count % 2 == 0:
-                    print("0x{0:04X}".format(app_state.prog_count - 2) + "    " + byte_str)
-                    byte_str = ""
-
-                poke(app_state.prog_count, int(byte, 16))
-                app_state.prog_count += 1
+                elif app_state.pass_count == 2:
+                    print("          0x" + to_hex(app_state.prog_count, 4) + "    " + byte)
+                poke(app_state.prog_count, (int(byte, 16) >> 8) & 0xFF)
+                poke(app_state.prog_count + 1, int(byte, 16) & 0xFF)
+                app_state.prog_count += 2
             if app_state.pass_count == 1:
-                show_verbose(str(count) + " bytes written at 0x" + "{0:04X}".format(app_state.prog_count - count) + " (line " + str(line.line_number + 1) + ")")
+                show_verbose(str(byte_count) + " bytes written at 0x" + to_hex(app_state.prog_count - byte_count, 4) +
+                    " (line " + str(line.line_number + 1) + ")")
         else:
-            # Only a single 16-bit value to drop in
-            # This is set in 'decode_opnd'
+            # Just a single 16-bit value to drop in
             opnd_value = opnd_value & 0xFFFF
-            lsb = opnd_value & 0xFF
-            msb = (opnd_value & 0xFF00) >> 8
             if app_state.pass_count == 1:
-                show_verbose("The two bytes at 0x" + "{0:04X}".format(app_state.prog_count) + " set to 0x" + "{0:04X}".format(opnd_value) + " (line " + str(line.line_number + 1) + ")")
+                show_verbose("The two bytes at 0x" + to_hex(app_state.prog_count, 4) + " set to 0x" +
+                (opnd_value, 4) + " (line " + str(line.line_number + 1) + ")")
             result = write_code(line_parts, line)
-            poke(app_state.prog_count, msb)
-            poke(app_state.prog_count + 1, lsb)
+            poke(app_state.prog_count, (opnd_value >> 8) & 0xFF)
+            poke(app_state.prog_count + 1, opnd_value & 0xFF)
             app_state.prog_count += 2
 
     if line.pseudo_op_type == 5:
@@ -800,7 +798,7 @@ def process_pseudo_op(line_parts, line):
     if line.pseudo_op_type == 6:
         # ORG: set or reset the origin
         if app_state.pass_count == 1:
-            show_verbose("Origin set to " + "0x{0:04X}".format(opnd_value) + " (line " + str(line.line_number + 1) + ")")
+            show_verbose("Origin set to 0x" + to_hex(opnd_value, 4) + " (line " + str(line.line_number + 1) + ")")
             if app_state.prog_count != app_state.chunk["address"]:
                 new_chunk = {}
                 new_chunk["code"] = bytearray()
@@ -811,10 +809,10 @@ def process_pseudo_op(line_parts, line):
         app_state.prog_count = opnd_value
         result = write_code(line_parts, line)
         if label_name:
-            label = app_state.labels[idx]
+            label = app_state.labels[label_idx]
             label["addr"] = opnd_value
             if app_state.pass_count == 1:
-                show_verbose("Label " + label["name"] + " set to 0x" + "{0:04X}".format(opnd_value) + " (line " + str(line.line_number + 1) + ")")
+                show_verbose("Label " + label["name"] + " set to 0x" + to_hex(opnd_value, 4) + " (line " + str(line.line_number + 1) + ")")
 
     if line.pseudo_op_type == 8:
         # FCC: Pokes in a string
@@ -1035,6 +1033,21 @@ def get_int_value(num_str, size=8, do_twos=False):
     return value
 
 
+def to_hex(value, str_len=2):
+    '''
+    Encode an integer to a 'str_len' length hex string.
+
+    Args:
+        value   (int): The integer.
+        str_len (str): A string binary representation. Default: 2
+
+    Returns:
+        str: The hex representation
+    '''
+    format_str = "{0:0" + str(str_len) + "X}"
+    return format_str.format(value)
+
+
 def decode_binary(bin_str):
     '''
     Decode the supplied binary value (as a string, eg. '0010010') to an integer.
@@ -1098,22 +1111,21 @@ def write_code(line_parts, line):
         if op_value < 256:
             poke(app_state.prog_count, op_value)
             app_state.prog_count += 1
-            if app_state.pass_count == 2: byte_str += "{0:02X}".format(op_value)
+            if app_state.pass_count == 2: byte_str += to_hex(op_value)
         if op_value > 255:
             lsb = op_value & 0xFF
-            msb = (op_value & 0xFF00) >> 8
+            msb = (op_value >> 8) & 0xFF
             poke(app_state.prog_count, msb)
-            app_state.prog_count += 1
-            poke(app_state.prog_count, lsb)
-            app_state.prog_count += 1
-            if app_state.pass_count == 2: byte_str += ("{0:02X}".format(msb) + "{0:02X}".format(lsb))
+            poke(app_state.prog_count + 1, lsb)
+            app_state.prog_count += 2
+            if app_state.pass_count == 2: byte_str += (to_hex(msb) + to_hex(lsb))
 
+        # Set 'op-type' for output
         if line.branch_op_type == BRANCH_MODE_LONG: line.op_type = ADDR_MODE_EXTENDED
         if line.branch_op_type == BRANCH_MODE_SHORT: line.op_type = ADDR_MODE_DIRECT
 
         if line.op_type == ADDR_MODE_IMMEDIATE:
-            # Immediate addressing
-            # Get last character of opcode
+            # Immediate addressing - get last character of opcode
             an_op = line.op[0]
             an_op = an_op[-1]
             if an_op in ("D", "X", "Y", "S", "U"): line.op_type = ADDR_MODE_EXTENDED
@@ -1121,13 +1133,13 @@ def write_code(line_parts, line):
             # Immediate addressing: TFR/EXG OR PUL/PSH
             poke(app_state.prog_count, int(line.opnd))
             app_state.prog_count += 1
-            if app_state.pass_count == 2: byte_str += "{0:02X}".format(line.opnd)
+            if app_state.pass_count == 2: byte_str += to_hex(line.opnd)
         if line.op_type == ADDR_MODE_INHERENT:
             # Inherent addressing
             line.op_type = ADDR_MODE_NONE
         if line.is_indexed is True:
             poke(app_state.prog_count, line.opnd)
-            if app_state.pass_count == 2: byte_str += "{0:02X}".format(line.opnd)
+            if app_state.pass_count == 2: byte_str += to_hex(line.opnd)
             app_state.prog_count += 1
             if line.index_address != -1:
                 line.opnd = line.index_address
@@ -1143,52 +1155,57 @@ def write_code(line_parts, line):
             # Immediate, direct and indexed addressing
             poke(app_state.prog_count, line.opnd)
             app_state.prog_count += 1
-            if app_state.pass_count == 2: byte_str += "{0:02X}".format(line.opnd)
+            if app_state.pass_count == 2: byte_str += to_hex(line.opnd)
         if line.op_type == ADDR_MODE_EXTENDED:
             # Extended addressing
             lsb = line.opnd & 0xFF
-            msb = (line.opnd & 0xFF00) >> 8
+            msb = (line.opnd >> 8) & 0xFF
             poke(app_state.prog_count, msb)
             poke(app_state.prog_count + 1, lsb)
             app_state.prog_count += 2
-            if app_state.pass_count == 2: byte_str += ("{0:02X}".format(msb) + "{0:02X}".format(lsb))
+            if app_state.pass_count == 2: byte_str += (to_hex(msb) + to_hex(lsb))
 
     if app_state.pass_count == 2 and app_state.verbose is True:
         # Display the line on pass 2
         # Determine the length of the longest label
-        label_len = 6
+        label_len = 5
         if app_state.labels:
             for label in app_state.labels:
                 if label_len < len(label["name"]): label_len = len(label["name"])
+        label_len = 9 - label_len if label_len < 5 else label_len + 4
+
 
         if line.line_number == 0:
             # Print the header on the first line
-            display_str = "Address   Bytes       Label" + set_spacer(15, label_len) + "Op.      Data"
+            display_str = "Line      Address   Bytes       Label" + set_spacer(label_len - 5) + "Op.      Data"
             print(display_str)
             print("-" * len(display_str))
 
+        # Set the line number
+        display_str = str(line.line_number + 1)
+        display_str = "0" * (6 - len(display_str)) + display_str + "    "
+
         # Handle comment-only lines
         if line.comment_start > 0:
-            print(set_spacer(22) + line_parts[0])
+            print(display_str + set_spacer(32 - len(display_str)) + line_parts[0])
             return True
 
-        # First, add the 16-bit address
-        display_str = "          "
+        # Add the 16-bit address
         if byte_str:
             # Display the address at the start of the op's first byte
-            display_str = "0x{0:04X}".format(app_state.prog_count - int(len(byte_str) / 2)) + "    "
+            display_str += ("0x" + to_hex(app_state.prog_count - int(len(byte_str) / 2), 4) + "    ")
         elif line.pseudo_op_type > 0:
             # Display the address at the start of the pseudoop's first byte
             # NOTE most pseudo ops have no byteString, hence this separate entry
-            display_str = "0x{0:04X}".format(app_state.prog_count) + "    "
-            if line.pseudo_op_type == 3: byte_str = "{0:02X}".format(line.opnd)
-            if line.pseudo_op_type == 4: byte_str = "{0:04X}".format(line.opnd)
+            display_str += ("0x" + to_hex(app_state.prog_count, 4) + "    ")
+            if line.pseudo_op_type == 3: byte_str = to_hex(line.opnd)
+            if line.pseudo_op_type == 4: byte_str = to_hex(line.opnd, 4)
 
         # Add the lines assembled machine code
         display_str += (byte_str + set_spacer(12, len(byte_str)))
 
         # Add the label name - or spaces in its place
-        display_str += (line_parts[0] + set_spacer(20 - label_len - len(line_parts[0])))
+        display_str += (line_parts[0] + set_spacer(label_len - len(line_parts[0])))
 
         # Add the op
         op_str = line_parts[1]
@@ -1196,7 +1213,7 @@ def write_code(line_parts, line):
             op_str = op_str.upper()
         elif app_state.show_upper == 2:
             op_str = op_str.lower()
-        display_str += (op_str + set_spacer(9, len(line_parts[1])))
+        display_str += (op_str + set_spacer(9, len(op_str)))
 
         # Add the operand
         if len(line_parts) > 2: display_str += line_parts[2]
