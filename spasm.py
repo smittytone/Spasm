@@ -315,10 +315,8 @@ def parse_line(line, line_number):
     '''
     Process a single line of assembly, on a per-pass basis.
 
-    Each line is segmented by space characters, and we remove extra spaces from
-    all line parts other than comments.
-    KNOWN ISSUE: You cannot therefore have a space set using the Ascii indicator, '
-    TODO: Some way of handling string constants
+    Each line is segmented by space characters, and we remove extra spaces from all
+    line parts other than comments. You cannot have a space set using the Ascii indicator, '
 
     Args:
         line        (list): A line of program as a raw string.
@@ -1172,8 +1170,9 @@ def write_code(line_parts, line):
 
         if line.line_number == 0:
             # Print the header on the first line
-            print("Address   Bytes       Label" + set_spacer(label_len, 5) + "   Op.      Data")
-            print("-----------------------------------------------")
+            display_str = "Address   Bytes       Label" + set_spacer(15, label_len) + "Op.      Data"
+            print(display_str)
+            print("-" * len(display_str))
 
         # Handle comment-only lines
         if line.comment_start > 0:
@@ -1181,6 +1180,7 @@ def write_code(line_parts, line):
             return True
 
         # First, add the 16-bit address
+        display_str = "          "
         if byte_str:
             # Display the address at the start of the op's first byte
             display_str = "0x{0:04X}".format(app_state.prog_count - int(len(byte_str) / 2)) + "    "
@@ -1190,16 +1190,12 @@ def write_code(line_parts, line):
             display_str = "0x{0:04X}".format(app_state.prog_count) + "    "
             if line.pseudo_op_type == 3: byte_str = "{0:02X}".format(line.opnd)
             if line.pseudo_op_type == 4: byte_str = "{0:04X}".format(line.opnd)
-            if line.pseudo_op_type == 6: display_str = "          "
-        else:
-            # Display no address for any other line, eg. comment-only lines
-            display_str = "          "
 
         # Add the lines assembled machine code
-        display_str += (byte_str + set_spacer(10, len(byte_str)) + "  ")
+        display_str += (byte_str + set_spacer(12, len(byte_str)))
 
         # Add the label name - or spaces in its place
-        display_str += (line_parts[0] + set_spacer(label_len, len(line_parts[0])) + "   ")
+        display_str += (line_parts[0] + set_spacer(20 - label_len - len(line_parts[0])))
 
         # Add the op
         op_str = line_parts[1]
@@ -1207,7 +1203,7 @@ def write_code(line_parts, line):
             op_str = op_str.upper()
         elif app_state.show_upper == 2:
             op_str = op_str.lower()
-        display_str += (op_str + set_spacer(5, len(line_parts[1])) + "    ")
+        display_str += (op_str + set_spacer(9, len(line_parts[1])))
 
         # Add the operand
         if len(line_parts) > 2: display_str += line_parts[2]
