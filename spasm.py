@@ -406,13 +406,13 @@ def parse_line(line, line_number):
                 label["addr"] = app_state.prog_count
                 # Output the label valuation
                 show_verbose("Label " + label["name"] + " set to 0x" +
-                    to_hex(app_state.prog_count, 4) + " (line " + str(line_number + 1) + ")")
+                             to_hex(app_state.prog_count, 4) + " (line " + str(line_number + 1) + ")")
         else:
             # Record the newly found label
             app_state.labels.append({"name": label, "addr": app_state.prog_count})
             if app_state.pass_count == 1:
                 show_verbose("Label " + label + " found and set to 0x" + to_hex(app_state.prog_count, 4) +
-                    " (line " + str(line_number + 1) + ")")
+                             " (line " + str(line_number + 1) + ")")
     else:
         # Not a label, so insert a blank - ie. ensure the op will be in lineParts[1]
         line_parts.insert(0, " ")
@@ -466,8 +466,8 @@ def decode_op(an_op, line):
 
     # Check for regular instructions
     if an_op in ISA:
-        index = ISA.index(an_op)
-        for i in range(index, index + 6): line.op.append(ISA[i])
+        op_index = ISA.index(an_op)
+        for i in range(op_index, op_index + 6): line.op.append(ISA[i])
         return True
 
     # Check for branch instructions
@@ -479,8 +479,8 @@ def decode_op(an_op, line):
         line.branch_op_type = BRANCH_MODE_SHORT
 
     if an_op in BSA:
-        index = BSA.index(an_op)
-        for i in range(index, index + 3): line.op.append(BSA[i])
+        op_index = BSA.index(an_op)
+        for i in range(op_index, op_index + 3): line.op.append(BSA[i])
         return True
 
     # No instruction found: that's a Bad Op error
@@ -508,17 +508,17 @@ def decode_opnd(an_opnd, line):
     if op_name in ("EXG", "TFR"):
         # Register swap operation to calculate the special operand value
         # by looking at the named registers separated by a comma
-        parts = an_opnd.split(',')
-        if len(parts) != 2 or parts[0] == parts[1]:
+        opnd_parts = an_opnd.split(',')
+        if len(parts) != 2 or opnd_parts[0] == opnd_parts[1]:
             error_message(7, line.line_number) # Bad operand
             return -1
 
-        source = get_reg_value(parts[0])
+        source = get_reg_value(opnd_parts[0])
         if not source:
             error_message(7, line.line_number) # Bad operand
             return -1
 
-        dest = get_reg_value(parts[1])
+        dest = get_reg_value(opnd_parts[1])
         if not dest:
             error_message(7, line.line_number) # Bad operand
             return -1
@@ -538,8 +538,8 @@ def decode_opnd(an_opnd, line):
         if not an_opnd:
             error_message(8, line.line_number) # Bad operand
             return -1
-        parts = an_opnd.split(',')
-        if len(parts) == 1:
+        opnd_parts = an_opnd.split(',')
+        if len(opnd_parts) == 1:
             # A single register
             if an_opnd == op_name[3]:
                 # Can't PUL or PSH a register to itself, eg. PULU U doesn't make sense
@@ -550,7 +550,7 @@ def decode_opnd(an_opnd, line):
                 error_message(8, line.line_number) # Bad operand
                 return -1
         else:
-            for part in parts:
+            for part in opnd_parts:
                 reg_val = get_pull_reg_value(part)
                 if reg_val == -1:
                     error_message(8, line.line_number) # Bad operand
@@ -580,7 +580,7 @@ def decode_opnd(an_opnd, line):
                     # Convert value internally as hex
                     if op_char == "$": op_char = "0x"
                     # Operand could use indexed addressing or be a FCB/FDB value list
-                    if op_char == "," or op_char == "[":
+                    if op_char in (",", "["):
                         if line.pseudo_op_type == 0:
                             # It's an indexed addressing operand, so decode it
                             opnd_str = decode_indexed(an_opnd, line)
@@ -597,8 +597,8 @@ def decode_opnd(an_opnd, line):
 
     if opnd_str and opnd_str[0] == "@":
         # Operand is a label
-        index = index_of_label(opnd_str)
-        if index == -1:
+        label_index = index_of_label(opnd_str)
+        if label_index == -1:
             # Label has not been seen yet
             if app_state.pass_count == 2:
                 # Any new label seen on pass 2 indicates an error
@@ -610,7 +610,7 @@ def decode_opnd(an_opnd, line):
             show_verbose("Label " + opnd_str + " found (line " + str(line.line_number + 1) + ")")
             opnd_str = "UNDEF"
         else:
-            label = app_state.labels[index]
+            label = app_state.labels[label_index]
             opnd_value = label["addr"]
             opnd_str = str(opnd_value)
 
@@ -620,12 +620,12 @@ def decode_opnd(an_opnd, line):
     else:
         if line.pseudo_op_type in (3, 4):
             # FCB/FDB - check for value lists
-            parts = opnd_str.split(",")
-            if len(parts) > 1:
+            opnd_parts = opnd_str.split(",")
+            if len(opnd_parts) > 1:
                 # We have a list of values. Convert them to hex bytes for internal processing
                 byte_string = ""
                 byte_count = 2 if line.pseudo_op_type == 3 else 4
-                for part in parts: byte_string += to_hex(get_int_value(part), byte_count)
+                for part in opnd_parts: byte_string += to_hex(get_int_value(part), byte_count)
                 # Preserve the byte string for later then bail
                 line.pseudo_op_value = byte_string
                 opnd_value = 0
@@ -706,7 +706,7 @@ def process_pseudo_op(line_parts, line):
             label = app_state.labels[label_idx]
             label["addr"] = opnd_value
             show_verbose("Label " + label_name + " set to 0x" +
-                to_hex(opnd_value) + " (line " + str(line.line_number + 1) + ")")
+                         to_hex(opnd_value) + " (line " + str(line.line_number + 1) + ")")
         result = write_code(line_parts, line)
 
     if line.pseudo_op_type == 2:
@@ -717,7 +717,7 @@ def process_pseudo_op(line_parts, line):
             label["addr"] = app_state.prog_count
         if app_state.pass_count == 1:
             show_verbose(str(opnd_value) + " bytes reserved at address 0x" +
-                to_hex(app_state.prog_count, 4) + " (line " + str(line.line_number + 1) + ")")
+                         to_hex(app_state.prog_count, 4) + " (line " + str(line.line_number + 1) + ")")
         for i in range(app_state.prog_count, app_state.prog_count + opnd_value): poke(i, 0x12)
         result = write_code(line_parts, line)
         app_state.prog_count += opnd_value
@@ -745,15 +745,15 @@ def process_pseudo_op(line_parts, line):
                 count += 1
             if app_state.pass_count == 1:
                 show_verbose(str(count) + " bytes written at 0x" +
-                    to_hex(app_state.prog_count - count, 4) +
-                    " (line " + str(line.line_number + 1) + ")")
+                             to_hex(app_state.prog_count - count, 4) +
+                             " (line " + str(line.line_number + 1) + ")")
         else:
             # Just a single byte to drop in
             opnd_value = opnd_value & 0xFF
             poke(app_state.prog_count, opnd_value)
             if app_state.pass_count == 1:
                 show_verbose("The byte at 0x" + to_hex(app_state.prog_count, 4) + " set to 0x" +
-                    to_hex(opnd_value) + " (line " + str(line.line_number + 1) + ")")
+                             to_hex(opnd_value) + " (line " + str(line.line_number + 1) + ")")
             result = write_code(line_parts, line)
             app_state.prog_count += 1
 
@@ -779,13 +779,13 @@ def process_pseudo_op(line_parts, line):
                 app_state.prog_count += 2
             if app_state.pass_count == 1:
                 show_verbose(str(byte_count) + " bytes written at 0x" + to_hex(app_state.prog_count - byte_count, 4) +
-                    " (line " + str(line.line_number + 1) + ")")
+                             " (line " + str(line.line_number + 1) + ")")
         else:
             # Just a single 16-bit value to drop in
             opnd_value = opnd_value & 0xFFFF
             if app_state.pass_count == 1:
                 show_verbose("The two bytes at 0x" + to_hex(app_state.prog_count, 4) + " set to 0x" +
-                (opnd_value, 4) + " (line " + str(line.line_number + 1) + ")")
+                             (opnd_value, 4) + " (line " + str(line.line_number + 1) + ")")
             result = write_code(line_parts, line)
             poke(app_state.prog_count, (opnd_value >> 8) & 0xFF)
             poke(app_state.prog_count + 1, opnd_value & 0xFF)
@@ -812,7 +812,8 @@ def process_pseudo_op(line_parts, line):
             label = app_state.labels[label_idx]
             label["addr"] = opnd_value
             if app_state.pass_count == 1:
-                show_verbose("Label " + label["name"] + " set to 0x" + to_hex(opnd_value, 4) + " (line " + str(line.line_number + 1) + ")")
+                show_verbose("Label " + label["name"] + " set to 0x" +
+                             to_hex(opnd_value, 4) + " (line " + str(line.line_number + 1) + ")")
 
     if line.pseudo_op_type == 8:
         # FCC: Pokes in a string
@@ -825,18 +826,18 @@ def process_pseudo_op(line_parts, line):
     return result
 
 
-def chunk_from_address(address):
+def chunk_from_address(an_address):
     '''
     Get a specific chunk from its address.
 
     Args:
-        address (int): The chunk address.
+        an_address (int): The chunk address.
 
     Returns:
         Chunk: The required chunk.
     '''
     for chunk in app_state.code:
-        if chunk["address"] == address: return chunk
+        if chunk["address"] == an_address: return chunk
     print("ERROR -- mis-addressed chunk")
     sys.exit(1)
 
@@ -857,10 +858,10 @@ def decode_indexed(opnd, line):
     reg = 0
     byte_value = -1
     is_extended = False
-    parts = opnd.split(',')
+    index_parts = opnd.split(',')
 
     # Decode the left side of the operand
-    left = parts[0]
+    left = index_parts[0]
     if left:
         if left[0] == "[":
             # Addressing mode is Indirect Indexed, eg. LDA (5,PC)
@@ -884,8 +885,8 @@ def decode_indexed(opnd, line):
             # The string should be a number
             if left[0] == "$": left = "0x" + left[1:]
             if left[0] == "@":
-                index = index_of_label(left)
-                if index == -1:
+                label_index = index_of_label(left)
+                if label_index == -1:
                     if app_state.pass_count == 2:
                         error_message(3, line.line_number) # No label defined
                         return ""
@@ -894,7 +895,7 @@ def decode_indexed(opnd, line):
                     # Set byte value to 129 to make sure we allow a 16-bit max. space
                     byte_value = 129
                 else:
-                    label = app_state.labels[index]
+                    label = app_state.labels[label_index]
                     byte_value = label["addr"]
             else:
                 byte_value = get_int_value(left)
@@ -918,7 +919,7 @@ def decode_indexed(opnd, line):
 
     if is_extended is False:
         # Decode the right side of the operand
-        right = parts[1]
+        right = index_parts[1]
         # Remove right hand bracket (indirect) if present
         if right[-1] == "]": right = right[:-1]
         # Operand is of the 'n,PCR' type - just set bit 2
@@ -1237,7 +1238,7 @@ def write_code(line_parts, line):
     return True
 
 
-def poke(address, value):
+def poke(an_address, value):
     '''
     Add new byte values to the machine code storage.
 
@@ -1246,8 +1247,8 @@ def poke(address, value):
         value   (int):  An 8-bit value to add to the store.
     '''
     chunk = app_state.chunk
-    if address - chunk["address"] > len(chunk["code"]) - 1:
-        end_address = address - chunk["address"] - len(chunk["code"])
+    if an_address - chunk["address"] > len(chunk["code"]) - 1:
+        end_address = an_address - chunk["address"] - len(chunk["code"])
         if end_address > 1:
             # 'address' is well beyond the end of the list, so insert
             # padding values in the form of a 6809 NOP opcode
@@ -1259,7 +1260,7 @@ def poke(address, value):
         chunk["code"].append(value)
     else:
         # Replace an existing item
-        chunk["code"][address - chunk["address"]] = value
+        chunk["code"][an_address - chunk["address"]] = value
 
 
 def error_message(err_code, err_line):
