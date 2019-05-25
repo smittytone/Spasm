@@ -206,7 +206,7 @@ class LineData:
         self.pseudo_op_value = ""
         self.index_address = -1
         self.line_number = 0
-        self.comment_start = 0
+        self.comment_start = -1
         self.is_indirect = False
         self.is_indexed = False
         self.expects_8b_opnd = False # ADDED 1.2.0
@@ -1175,7 +1175,6 @@ def write_code(line_parts, line):
                 if label_len < len(label["name"]): label_len = len(label["name"])
         label_len = 9 - label_len if label_len < 5 else label_len + 4
 
-
         if line.line_number == 0:
             # Print the header on the first line
             display_str = "Line      Address   Bytes       Label" + set_spacer(label_len - 5) + "Op.      Data"
@@ -1187,8 +1186,8 @@ def write_code(line_parts, line):
         display_str = "0" * (6 - len(display_str)) + display_str + "    "
 
         # Handle comment-only lines
-        if line.comment_start > 0:
-            print(display_str + set_spacer(32 - len(display_str)) + line_parts[0])
+        if line.comment_start != -1:
+            print(display_str + set_spacer(22) + line_parts[0])
             return True
 
         # Add the 16-bit address
