@@ -196,7 +196,7 @@ See below for a full list of *spasm* switches.
 
 ## Release Notes ##
 
-- 1.2.0 &mdash; *unreleased*
+- 1.2.0 &mdash; *29 May 2019*
     - *Improvements*
         - Fully support `ORG` directive: assemble code into multiple chunks.
         - Add support for `FCC` directive: assemble code Ascii strings to bytes.
