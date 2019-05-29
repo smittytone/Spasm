@@ -200,6 +200,7 @@ See below for a full list of *spasm* switches.
     - *Improvements*
         - Fully support `ORG` directive: assemble code into multiple chunks.
         - Add support for `FCC` directive: assemble code Ascii strings to bytes.
+        - Improve operation of `FCB` and `FDB` directives.
         - `.6809` files' *code* field now contains a string of two-character hex values.
         - Change `-v` switch to present version info (as verbose mode is default).
     - *Bug Fixes*
