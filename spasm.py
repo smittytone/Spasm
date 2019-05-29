@@ -198,7 +198,7 @@ class LineData:
     '''
 
     def __init__(self):
-        self.op = []
+        self.oper = []
         self.opnd = -1
         self.op_type = 0
         self.branch_op_type = 0
@@ -460,14 +460,14 @@ def decode_op(an_op, line):
     # Check for pseudo-ops
     pseudo_ops = ("EQU", "RMB", "FCB", "FDB", "END", "ORG", "SETDP", "FCC")
     if an_op in pseudo_ops:
-        line.op = [an_op]
+        line.oper = [an_op]
         line.pseudo_op_type = pseudo_ops.index(an_op) + 1
         return True
 
     # Check for regular instructions
     if an_op in ISA:
         op_index = ISA.index(an_op)
-        for i in range(op_index, op_index + 6): line.op.append(ISA[i])
+        for i in range(op_index, op_index + 6): line.oper.append(ISA[i])
         return True
 
     # Check for branch instructions
@@ -480,7 +480,7 @@ def decode_op(an_op, line):
 
     if an_op in BSA:
         op_index = BSA.index(an_op)
-        for i in range(op_index, op_index + 3): line.op.append(BSA[i])
+        for i in range(op_index, op_index + 3): line.oper.append(BSA[i])
         return True
 
     # No instruction found: that's a Bad Op error
@@ -504,7 +504,7 @@ def decode_opnd(an_opnd, line):
     opnd_value = 0
     line.op_type = ADDR_MODE_NONE
 
-    if len(line.op) > 1: op_name = line.op[0]
+    if len(line.oper) > 1: op_name = line.oper[0]
     if op_name in ("EXG", "TFR"):
         # Register swap operation to calculate the special operand value
         # by looking at the named registers separated by a comma
@@ -573,7 +573,7 @@ def decode_opnd(an_opnd, line):
                 elif op_char == "#":
                     # Immediate addressing
                     line.op_type = ADDR_MODE_IMMEDIATE
-                    reg = line.op[0]
+                    reg = line.oper[0]
                     if reg[-1:] in ("A", "B") or reg[-2:] == "CC": line.expects_8b_opnd = True
                     opnd_str = ""
                 else:
@@ -826,7 +826,7 @@ def process_pseudo_op(line_parts, line):
     return result
 
 
-def chunk_from_address(an_address):
+def chunk_from_address(address):
     '''
     Get a specific chunk from its address.
 
@@ -837,7 +837,7 @@ def chunk_from_address(an_address):
         Chunk: The required chunk.
     '''
     for chunk in app_state.code:
-        if chunk["address"] == an_address: return chunk
+        if chunk["address"] == address: return chunk
     print("ERROR -- mis-addressed chunk")
     sys.exit(1)
 
@@ -1098,11 +1098,11 @@ def write_code(line_parts, line):
     '''
     byte_str = ""
 
-    if len(line.op) > 1:
+    if len(line.oper) > 1:
         if line.branch_op_type > 0: line.op_type = line.branch_op_type
 
         # Get the machine code for the op
-        op_value = line.op[line.op_type - 10 if line.op_type > 10 else line.op_type]
+        op_value = line.oper[line.op_type - 10 if line.op_type > 10 else line.op_type]
 
         if op_value == -1:
             error_message(6, line.line_number) # Bad opcode
@@ -1127,7 +1127,7 @@ def write_code(line_parts, line):
 
         if line.op_type == ADDR_MODE_IMMEDIATE:
             # Immediate addressing - get last character of opcode
-            an_op = line.op[0]
+            an_op = line.oper[0]
             an_op = an_op[-1]
             if an_op in ("D", "X", "Y", "S", "U"): line.op_type = ADDR_MODE_EXTENDED
         if line.op_type == ADDR_MODE_IMMEDIATE_SPECIAL:
@@ -1237,7 +1237,7 @@ def write_code(line_parts, line):
     return True
 
 
-def poke(an_address, value):
+def poke(address, value):
     '''
     Add new byte values to the machine code storage.
 
@@ -1246,8 +1246,8 @@ def poke(an_address, value):
         value   (int):  An 8-bit value to add to the store.
     '''
     chunk = app_state.chunk
-    if an_address - chunk["address"] > len(chunk["code"]) - 1:
-        end_address = an_address - chunk["address"] - len(chunk["code"])
+    if address - chunk["address"] > len(chunk["code"]) - 1:
+        end_address = address - chunk["address"] - len(chunk["code"])
         if end_address > 1:
             # 'address' is well beyond the end of the list, so insert
             # padding values in the form of a 6809 NOP opcode
@@ -1259,7 +1259,7 @@ def poke(an_address, value):
         chunk["code"].append(value)
     else:
         # Replace an existing item
-        chunk["code"][an_address - chunk["address"]] = value
+        chunk["code"][address - chunk["address"]] = value
 
 
 def error_message(err_code, err_line):
@@ -1324,10 +1324,10 @@ def disassemble_file(file_spec):
 
         # FROM 1.2.0: Put the data into chunk for processing
         code_data = []
-        item = {}
-        item["code"] = file_data
-        item["address"] = app_state.start_address
-        code_data.append(item)
+        code_chunk = {}
+        code_chunk["code"] = file_data
+        code_chunk["address"] = app_state.start_address
+        code_data.append(code_chunk)
 
     if code_data is not None:
         # Disassemble the supplied set of chunks
@@ -1367,7 +1367,7 @@ def disassemble_file(file_spec):
 
                 # Assemble the byte string
                 byte_str += "{0:02X}".format(next_byte)
-                str_str += (chr(next_byte) if next_byte > 31 and next_byte < 128 else "_")
+                str_str += (chr(next_byte) if 31 < next_byte < 128 else "_")
 
                 # Combine the current byte with the previous one, if that
                 # was 0x10 or 0x11 (ie. extended ISA)
@@ -1692,15 +1692,15 @@ def get_files():
     Determine all the '.asm' and '.6809' files in the script's directory.
     '''
     current_dir = os.getcwd()
-    files = [file for file in os.listdir(current_dir) if os.path.isfile(os.path.join(current_dir, file))]
+    found_files = [found_file for found_file in os.listdir(current_dir) if os.path.isfile(os.path.join(current_dir, found_file))]
 
     # Count the number of .asm and .6809 files
     asm_files = []
     dis_files = []
-    for file in files:
-        _, file_ext = os.path.splitext(file)
-        if file_ext == ".asm": asm_files.append(file)
-        if file_ext in (".6809", ".rom"): dis_files.append(file)
+    for found_file in found_files:
+        _, file_ext = os.path.splitext(found_file)
+        if file_ext == ".asm": asm_files.append(found_file)
+        if file_ext in (".6809", ".rom"): dis_files.append(found_file)
 
     # Display file type breakdown
     asm_count = len(asm_files)
@@ -1732,9 +1732,9 @@ def handle_files(the_files=None):
         the_files (list): The .asm, .rom or .6809 files.
     '''
     if the_files:
-        for file in the_files:
-            if file[-2:] == "sm": assemble_file(file)
-            if file[-2:] in ("09", "om"): disassemble_file((file, True))
+        for one_file in the_files:
+            if one_file[-2:] == "sm": assemble_file(one_file)
+            if one_file[-2:] in ("09", "om"): disassemble_file((one_file, True))
 
 
 def str_to_int(num_str):
@@ -1747,11 +1747,11 @@ def str_to_int(num_str):
     Returns:
         int: The numerical value
     '''
-    base = 10
+    num_base = 10
     if num_str[0] == "$": num_str = "0x" + num_str[1:]
-    if num_str[:2] == "0x": base = 16
+    if num_str[:2] == "0x": num_base = 16
     try:
-        return int(address, base)
+        return int(num_str, num_base)
     except ValueError:
         return False
 
@@ -1805,7 +1805,7 @@ if __name__ == '__main__':
         app_state = AppState()
         files_flag = False
         arg_flag = False
-        files = []
+        arg_files = []
         for index, item in enumerate(sys.argv):
             if arg_flag is True:
                 arg_flag = False
@@ -1824,20 +1824,20 @@ if __name__ == '__main__':
                 if index + 1 >= len(sys.argv):
                     print("[ERROR] -s / --startaddress must be followed by an address")
                     sys.exit(1)
-                address = str_to_int(sys.argv[index + 1])
-                if address is False:
+                an_address = str_to_int(sys.argv[index + 1])
+                if an_address is False:
                     print("[ERROR] -s / --startaddress must be followed by a valid address")
                     sys.exit(1)
-                app_state.start_address = address
-                show_verbose("Code start address set to 0x{0:04X}".format(address))
+                app_state.start_address = an_address
+                show_verbose("Code start address set to 0x{0:04X}".format(an_address))
                 arg_flag = True
             elif item in ("-o", "--outfile"):
                 if index + 1 >= len(sys.argv) or sys.argv[index + 1][0] == "-":
                     app_state.out_file = "*"
                 else:
                     app_state.out_file = sys.argv[index + 1]
-                    _, file_ext = os.path.splitext(app_state.out_file)
-                    if file_ext != ".6809":
+                    _, out_file_ext = os.path.splitext(app_state.out_file)
+                    if out_file_ext != ".6809":
                         print("[ERROR] -o / --outfile must specify a .6809 sfile")
                         sys.exit(1)
                     # Make sure 'outfile' is a .6809 file
@@ -1859,13 +1859,13 @@ if __name__ == '__main__':
                 if index + 1 >= len(sys.argv):
                     print("[ERROR] -b / --baseaddress must be followed by an address")
                     sys.exit(1)
-                address = str_to_int(sys.argv[index + 1])
+                an_address = str_to_int(sys.argv[index + 1])
                 base = 10
-                if address is False:
+                if an_address is False:
                     print("[ERROR] -b / --baseaddress must be followed by an address")
                     sys.exit(1)
-                app_state.base_address = address
-                show_verbose("Disassembly start address set to 0x{0:04X}".format(address))
+                app_state.base_address = an_address
+                show_verbose("Disassembly start address set to 0x{0:04X}".format(an_address))
                 arg_flag = True
             else:
                 if item[0] == "-":
@@ -1873,13 +1873,13 @@ if __name__ == '__main__':
                     sys.exit(1)
                 elif index != 0 and arg_flag is False:
                     # Handle any included .asm, .6809 or .rom files
-                    _, file_ext = os.path.splitext(item)
-                    if file_ext in (".asm", ".6809", ".rom"):
-                        files.append(item)
+                    _, arg_file_ext = os.path.splitext(item)
+                    if arg_file_ext in (".asm", ".6809", ".rom"):
+                        arg_files.append(item)
                     else:
                         print("[ERROR] File " + item + " is not a .asm, .6809 or .rom file")
         # Process any named files
-        if files: handle_files(files)
+        if arg_files: handle_files(arg_files)
     else:
         # By default get all the .asm files in the working directory
         get_files()
