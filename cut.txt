@@ -1,0 +1,50 @@
+    # Split the line at the line terminator to remove the carriage return
+    line_parts = line.splitlines()
+    line = line_parts[0]
+
+    # Check for comment lines
+    comment = ""
+    comment_start = line.find(";")
+    if comment_start != -1:
+        # Found a comment line so re-position it
+        line_parts = line.split(";", 1)
+        comment = ";" + line_parts[len(line_parts) - 1]
+        line = line_parts[0]
+    comment_start = line.find("*")
+    if comment_start != -1:
+        # Found a comment line so re-position it
+        line_parts = line.split("*", 1)
+        comment = "*" + line_parts[len(line_parts) - 1]
+        line = line_parts[0]
+
+    # FROM 1.2.0: Check for quoted strings (only double-quotes for now)
+    quote = ""
+    quote_start = line.find('"')
+    if quote_start != -1:
+        line_parts = line.split('"', 1)
+        quote = line_parts[len(line_parts) - 1]
+        line = line_parts[0]
+        line_parts = quote.split('"', 1)
+        quote = '"' + line_parts[0] + '"'
+
+    # Segment the remaining line by spaces
+    line_parts = line.split(" ")
+
+    # Remove empty entries (ie. instances of multiple spaces)
+    j = 0
+    while True:
+        if j == len(line_parts): break
+        if not line_parts[j]:
+            line_parts.pop(j)
+        else:
+            j += 1
+
+    # Add back the quote, if any
+    if quote: line_parts.append(quote)
+
+    # At this point, typical line might be:
+    #   lineParts[0] = "@start_address"
+    #   lineParts[1] = "EQU"
+    #   lineParts[2] = "$FFFF"
+    #   lineParts[3] = ";This is a comment"
+    # Empty lines will be present in the list as empty strings
