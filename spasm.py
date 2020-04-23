@@ -368,7 +368,7 @@ def decode_opnd(an_opnd, line):
                 elif op_char == "#":
                     # Immediate addressing
                     line.op_type = ADDR_MODE_IMMEDIATE
-                    reg = line.oper[0]
+                    reg = line.op[0]
                     if reg[-1:] in ("A", "B") or reg[-2:] == "CC": line.expects_8b_opnd = True
                     opnd_str = ""
                 else:
@@ -392,6 +392,7 @@ def decode_opnd(an_opnd, line):
 
     if opnd_str and opnd_str[0] == "@":
         # Operand is a label
+        #TODO Entry point expression evaluation
         label_index = index_of_label(opnd_str)
         if label_index == -1:
             # Label has not been seen yet
@@ -413,13 +414,13 @@ def decode_opnd(an_opnd, line):
         # No operand found, so this must be an Inherent Addressing op
         line.op_type = ADDR_MODE_INHERENT
     else:
-        if line.pseudo_op_type in (3, 4):
+        if line.pseudo_op_type in (PSEUDO_OP_FCB, PSEUDO_OP_FDB):
             # FCB/FDB - check for value lists
             opnd_parts = opnd_str.split(",")
             if len(opnd_parts) > 1:
                 # We have a list of values. Convert them to hex bytes for internal processing
                 byte_string = ""
-                byte_count = 2 if line.pseudo_op_type == 3 else 4
+                byte_count = 2 if line.pseudo_op_type == PSEUDO_OP_FCB else 4
                 for part in opnd_parts: byte_string += to_hex(get_int_value(part), byte_count)
                 # Preserve the byte string for later then bail
                 line.pseudo_op_value = byte_string
@@ -427,7 +428,7 @@ def decode_opnd(an_opnd, line):
             else:
                 # Not a list, so just get the value of the operand
                 opnd_value = get_int_value(opnd_str)
-        elif line.pseudo_op_type == 8:
+        elif line.pseudo_op_type == PSEUDO_OP_FCC:
             # FCC - get a string
             line.pseudo_op_value = opnd_str
             opnd_value = 0
@@ -437,7 +438,7 @@ def decode_opnd(an_opnd, line):
             if line.expects_8b_opnd is True and line.op_type == ADDR_MODE_IMMEDIATE: size = 8
             opnd_value = get_int_value(opnd_str, size)
 
-        if line.branch_op_type > 0:
+        if line.branch_op_type != -1:
             # Process a branch value
             if app_state.pass_count == 1:
                 # Don't calculate the branch offset on the first pass
@@ -494,7 +495,7 @@ def process_pseudo_op(line_parts, line):
     if label_name == " ": label_name = ""
     label_idx = index_of_label(label_name)
 
-    if line.pseudo_op_type == 0:
+    if line.pseudo_op_type == PSEUDO_OP_EQU
         # EQU: assign the operand value to the label declared immediately
         # before the EQU op. MUST have a label
         if label_idx == -1: return False
@@ -505,7 +506,7 @@ def process_pseudo_op(line_parts, line):
                          to_hex(opnd_value) + " (line " + str(line.line_number + 1) + ")")
         result = write_code(line_parts, line)
 
-    if line.pseudo_op_type == 1:
+    if line.pseudo_op_type == PSEUDO_OP_RMB:
         # RMB: Reserve the next 'opnd_value' bytes and set the label to the current
         # value of the programme counter
         if label_idx != -1:
@@ -518,7 +519,7 @@ def process_pseudo_op(line_parts, line):
         result = write_code(line_parts, line)
         app_state.prog_count += opnd_value
 
-    if line.pseudo_op_type == 2:
+    if line.pseudo_op_type == PSEUDO_OP_FCB:
         # FCB: Pokes 'opnd_value' (1 byte) or 'pseudo_op_value' (x bytes) at the
         # current byte. Sets a label, if present, to the address of the first byte
         if label_idx != -1:
@@ -553,7 +554,7 @@ def process_pseudo_op(line_parts, line):
             result = write_code(line_parts, line)
             app_state.prog_count += 1
 
-    if line.pseudo_op_type == 3:
+    if line.pseudo_op_type == PSEUDO_OP_FDB:
         # FDB: Pokes the MSB of 'opnd_value' into the current byte and the LSB into
         # the next byte. Sets the label to the address of the first byte.
         if label_idx != -1:
@@ -587,11 +588,11 @@ def process_pseudo_op(line_parts, line):
             poke(app_state.prog_count + 1, opnd_value & 0xFF)
             app_state.prog_count += 2
 
-    if line.pseudo_op_type == 4:
+    if line.pseudo_op_type == PSEUDO_OP_END:
         # END: The end of the program. This is optional, and currently does nothing
         result = write_code(line_parts, line)
 
-    if line.pseudo_op_type == 5:
+    if line.pseudo_op_type == PSEUDO_OP_ORG:
         # ORG: set or reset the origin
         if app_state.pass_count == 1:
             show_verbose("Origin set to 0x" + to_hex(opnd_value, 4) + " (line " + str(line.line_number + 1) + ")")
@@ -611,7 +612,7 @@ def process_pseudo_op(line_parts, line):
                 show_verbose("Label " + label["name"] + " set to 0x" +
                              to_hex(opnd_value, 4) + " (line " + str(line.line_number + 1) + ")")
 
-    if line.pseudo_op_type == 6:
+    if line.pseudo_op_type == PSEUDO_OP_FCC:
         # FCC: Pokes in a string
         result = write_code(line_parts, line)
         for i in range(0, len(line.pseudo_op_value)):
@@ -894,11 +895,11 @@ def write_code(line_parts, line):
     '''
     byte_str = ""
 
-    if len(line.oper) > 1:
+    if len(line.op) > 1:
         if line.branch_op_type > 0: line.op_type = line.branch_op_type
 
         # Get the machine code for the op
-        op_value = line.oper[line.op_type - 10 if line.op_type > 10 else line.op_type]
+        op_value = line.op[line.op_type - 10 if line.op_type > 10 else line.op_type]
 
         if op_value == -1:
             error_message(6, line.line_number) # Bad opcode
@@ -923,7 +924,7 @@ def write_code(line_parts, line):
 
         if line.op_type == ADDR_MODE_IMMEDIATE:
             # Immediate addressing - get last character of opcode
-            an_op = line.oper[0]
+            an_op = line.op[0]
             an_op = an_op[-1]
             if an_op in ("D", "X", "Y", "S", "U"): line.op_type = ADDR_MODE_EXTENDED
         if line.op_type == ADDR_MODE_IMMEDIATE_SPECIAL:

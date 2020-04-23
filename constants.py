@@ -28,6 +28,15 @@ ADDR_MODE_IMMEDIATE_SPECIAL = 11 # pylint: disable=C0326;
 BRANCH_MODE_SHORT           = 1 # pylint: disable=C0326;
 BRANCH_MODE_LONG            = 2 # pylint: disable=C0326;
 
+PSEUDO_OP_EQU               = 0 # pylint: disable=C0326;
+PSEUDO_OP_RMB               = 1 # pylint: disable=C0326;
+PSEUDO_OP_FCB               = 2 # pylint: disable=C0326;
+PSEUDO_OP_FDB               = 3 # pylint: disable=C0326;
+PSEUDO_OP_END               = 4 # pylint: disable=C0326;
+PSEUDO_OP_ORG               = 5 # pylint: disable=C0326;
+PSEUDO_OP_SETDP             = 6 # pylint: disable=C0326;
+PSEUDO_OP_FCC               = 7 # pylint: disable=C0326;
+
 ##########################################################################
 # The main 6809 instruction set in the form: mnemonic plus               #
 # addressing-specific byte vales, where -1 equals 'not supported'.       #
