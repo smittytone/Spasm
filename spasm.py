@@ -130,6 +130,7 @@ def parse_line(line, line_number):
     # Extract the line's parts into 'line_parts'
     while True:
         if char_ptr == len(line):
+            # We're at the end of the line, so keep any current word
             found_word = found_word.rstrip()
             if found_word:
                 line_parts.append(found_word)
@@ -164,6 +165,7 @@ def parse_line(line, line_number):
 
     # Set 'line_parts' to 4 items, padding as required
     if line_parts:
+        # Does the first char of the first word indicate a comment line?
         if line_parts[0][0] in (";", "*"):
             # Move initial comments to the column 4
             for _ in range(0, 3):
@@ -172,6 +174,7 @@ def parse_line(line, line_number):
             # Add a space in column 0 when there is no label
             line_parts.insert(0, " ")
 
+        # Move later comments to column 4
         if len(line_parts) > 2 and line_parts[2][0] in (";", "*"):
             line_parts.insert(2, " ")
 
@@ -184,26 +187,17 @@ def parse_line(line, line_number):
     #   lineParts[1] = "EQU"
     #   lineParts[2] = "$FFFF"
     #   lineParts[3] = ";This is a comment"
+    # Any these fields may be empty, ie. " "
+
     # Begin line decoding: create a line data object
     line_data = LineData()
     line_data.line_number = line_number
-    '''
-    if not line_parts:
-        # This is a comment-only line, or empty line,
-        # so assemble a basic empty list
-        if comment_start != -1 and app_state.pass_count == 2:
-            # We have a comment, so just dump it out on pass 2
-            line_data.comment_start = comment_start
-            write_code([comment, " ", " ", " "], line_data)
-            # And return to go and process the next line
-            return True
-        line_parts = [" ", " "]
-    '''
+
     # Process the line's components
     # Check for an initial label
     label = line_parts[0]
-    if label[0] == "@":
-        # Found a label - store it if we need to
+    if label != " ":
+        # Store the label if we need to
         got_label = index_of_label(label)
         if got_label != -1:
             # The label has already been seen during assembly
@@ -223,17 +217,8 @@ def parse_line(line, line_number):
             if app_state.pass_count == 1:
                 show_verbose("Label " + label + " found and set to 0x" + to_hex(app_state.prog_count, 4) +
                              " (line " + str(line_number + 1) + ")")
-    #else:
-        # Not a label, so insert a blank - ie. ensure the op will be in lineParts[1]
-        #line_parts.insert(0, " ")
 
-    # If there is no third field, add an empty one
-    #if len(line_parts) == 2: line_parts.append(" ")
-
-    # Put the comment string, if there is one, into the comment field, lineParts[3]
-    #line_parts.append(comment if comment else " ")
-
-    # Check the opcode
+    # Process the opcode
     if line_parts[1] != " ":
         result = decode_op(line_parts[1], line_data)
         if result is False: return False
@@ -243,7 +228,7 @@ def parse_line(line, line_number):
     if result is -1: return False
 
     # Handle a pseudo-op if we have one, or write out the code
-    if line_data.pseudo_op_type > 0:
+    if line_data.pseudo_op_type != -1:
         result = process_pseudo_op(line_parts, line_data)
     else:
         result = write_code(line_parts, line_data)
@@ -270,14 +255,14 @@ def decode_op(an_op, line):
     # Check for pseudo-ops
     pseudo_ops = ("EQU", "RMB", "FCB", "FDB", "END", "ORG", "SETDP", "FCC")
     if an_op in pseudo_ops:
-        line.oper = [an_op]
-        line.pseudo_op_type = pseudo_ops.index(an_op) + 1
+        line.op = [an_op]
+        line.pseudo_op_type = pseudo_ops.index(an_op)
         return True
 
     # Check for regular instructions
     if an_op in ISA:
         op_index = ISA.index(an_op)
-        for i in range(op_index, op_index + 6): line.oper.append(ISA[i])
+        for i in range(op_index, op_index + 6): line.op.append(ISA[i])
         return True
 
     # Check for branch instructions
@@ -290,7 +275,7 @@ def decode_op(an_op, line):
 
     if an_op in BSA:
         op_index = BSA.index(an_op)
-        for i in range(op_index, op_index + 3): line.oper.append(BSA[i])
+        for i in range(op_index, op_index + 3): line.op.append(BSA[i])
         return True
 
     # No instruction found: that's a Bad Op error

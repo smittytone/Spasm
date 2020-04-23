@@ -197,7 +197,7 @@ See below for a full list of *spasm* switches.
 ## Release Notes ##
 
 - 1.2.1 &mdash; *Unreleased*
-    -
+    - Refactoring
 - 1.2.0 &mdash; *29 May 2019*
     - *Improvements*
         - Fully support `ORG` directive: assemble code into multiple chunks.

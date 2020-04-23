@@ -11,11 +11,11 @@ class LineData:
     '''
 
     def __init__(self):
-        self.oper = []
+        self.op = []
         self.opnd = -1
         self.op_type = 0
-        self.branch_op_type = 0
-        self.pseudo_op_type = 0
+        self.branch_op_type = -1
+        self.pseudo_op_type = -1
         self.pseudo_op_value = ""
         self.index_address = -1
         self.line_number = 0
