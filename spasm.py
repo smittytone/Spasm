@@ -299,7 +299,7 @@ def decode_opnd(an_opnd, line):
     opnd_value = 0
     line.op_type = ADDR_MODE_NONE
 
-    if len(line.oper) > 1: op_name = line.oper[0]
+    if len(line.op) > 1: op_name = line.op[0]
     if op_name in ("EXG", "TFR"):
         # Register swap operation to calculate the special operand value
         # by looking at the named registers separated by a comma
@@ -494,7 +494,7 @@ def process_pseudo_op(line_parts, line):
     if label_name == " ": label_name = ""
     label_idx = index_of_label(label_name)
 
-    if line.pseudo_op_type == 1:
+    if line.pseudo_op_type == 0:
         # EQU: assign the operand value to the label declared immediately
         # before the EQU op. MUST have a label
         if label_idx == -1: return False
@@ -505,7 +505,7 @@ def process_pseudo_op(line_parts, line):
                          to_hex(opnd_value) + " (line " + str(line.line_number + 1) + ")")
         result = write_code(line_parts, line)
 
-    if line.pseudo_op_type == 2:
+    if line.pseudo_op_type == 1:
         # RMB: Reserve the next 'opnd_value' bytes and set the label to the current
         # value of the programme counter
         if label_idx != -1:
@@ -518,7 +518,7 @@ def process_pseudo_op(line_parts, line):
         result = write_code(line_parts, line)
         app_state.prog_count += opnd_value
 
-    if line.pseudo_op_type == 3:
+    if line.pseudo_op_type == 2:
         # FCB: Pokes 'opnd_value' (1 byte) or 'pseudo_op_value' (x bytes) at the
         # current byte. Sets a label, if present, to the address of the first byte
         if label_idx != -1:
@@ -553,7 +553,7 @@ def process_pseudo_op(line_parts, line):
             result = write_code(line_parts, line)
             app_state.prog_count += 1
 
-    if line.pseudo_op_type == 4:
+    if line.pseudo_op_type == 3:
         # FDB: Pokes the MSB of 'opnd_value' into the current byte and the LSB into
         # the next byte. Sets the label to the address of the first byte.
         if label_idx != -1:
@@ -587,11 +587,11 @@ def process_pseudo_op(line_parts, line):
             poke(app_state.prog_count + 1, opnd_value & 0xFF)
             app_state.prog_count += 2
 
-    if line.pseudo_op_type == 5:
+    if line.pseudo_op_type == 4:
         # END: The end of the program. This is optional, and currently does nothing
         result = write_code(line_parts, line)
 
-    if line.pseudo_op_type == 6:
+    if line.pseudo_op_type == 5:
         # ORG: set or reset the origin
         if app_state.pass_count == 1:
             show_verbose("Origin set to 0x" + to_hex(opnd_value, 4) + " (line " + str(line.line_number + 1) + ")")
@@ -611,7 +611,7 @@ def process_pseudo_op(line_parts, line):
                 show_verbose("Label " + label["name"] + " set to 0x" +
                              to_hex(opnd_value, 4) + " (line " + str(line.line_number + 1) + ")")
 
-    if line.pseudo_op_type == 8:
+    if line.pseudo_op_type == 6:
         # FCC: Pokes in a string
         result = write_code(line_parts, line)
         for i in range(0, len(line.pseudo_op_value)):
