@@ -4,10 +4,10 @@
 'SPASM' -- Smittytone's Primary 6809 ASeMmbler
 
 Version:
-    1.2.0
+    1.2.1
 
 Copyright:
-    2019, Tony Smith (@smittytone)
+    2021, Tony Smith (@smittytone)
 
 License:
     MIT (terms attached to this repo)
@@ -25,7 +25,7 @@ import json
 # Application-specific constants                                         #
 ##########################################################################
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 ERRORS = {"0": "No error",
           "1": "Bad mnemonic/opcode",
@@ -430,7 +430,7 @@ def parse_line(line, line_number):
 
     # Calculate the operand
     result = decode_opnd(line_parts[2], line_data)
-    if result is -1: return False
+    if result == -1: return False
 
     # Handle a pseudo-op if we have one, or write out the code
     if line_data.pseudo_op_type > 0:
@@ -509,7 +509,7 @@ def decode_opnd(an_opnd, line):
         # Register swap operation to calculate the special operand value
         # by looking at the named registers separated by a comma
         opnd_parts = an_opnd.split(',')
-        if len(parts) != 2 or opnd_parts[0] == opnd_parts[1]:
+        if len(opnd_parts) != 2 or opnd_parts[0] == opnd_parts[1]:
             error_message(7, line.line_number) # Bad operand
             return -1
 
@@ -902,7 +902,7 @@ def decode_indexed(opnd, line):
             if byte_value > 127 or byte_value < -128:
                 # 16-bit
                 opnd_value += 0x89
-            elif line.is_indirect is True or (byte_value > 15 or byte_value < -16):
+            elif line.is_indirect is True or byte_value > 15 or byte_value < -16:
                 # 8-bit
                 opnd_value += 0x88
             elif byte_value == 0:
