@@ -308,6 +308,20 @@ def assemble_file(file_path):
             app_state.out_file += ".6809"
         write_file(app_state.out_file)
 
+    # Temp section for testing
+    items = 0
+    display_str = ""
+    for chunk in app_state.code:
+        code_bytes = chunk["code"]
+        line_address = chunk["address"]
+        # Add the initial address
+        for i in range(0, len(code_bytes), 8):
+            for j in range(0, 8):
+                if i + j < len(code_bytes):
+                    display_str += "0x{0:02X},".format(code_bytes[i + j])
+                    items += 1
+        print(items, display_str)
+
 
 def parse_line(line, line_number):
     '''
@@ -430,7 +444,7 @@ def parse_line(line, line_number):
 
     # Calculate the operand
     result = decode_opnd(line_parts[2], line_data)
-    if result == -1: return False
+    if result == "ERROR": return False
 
     # Handle a pseudo-op if we have one, or write out the code
     if line_data.pseudo_op_type > 0:
@@ -497,12 +511,13 @@ def decode_opnd(an_opnd, line):
         line  (LineData): An object representing the decoded line.
 
     Returns
-        int: the operand value, or -1 if the operand value could not be determined
+        int: the operand value, or "ERROR" if the operand value could not be determined
     '''
     opnd_str = ""
     op_name = ""
     opnd_value = 0
     line.op_type = ADDR_MODE_NONE
+    err = "ERROR"
 
     if len(line.oper) > 1: op_name = line.oper[0]
     if op_name in ("EXG", "TFR"):
@@ -511,24 +526,24 @@ def decode_opnd(an_opnd, line):
         opnd_parts = an_opnd.split(',')
         if len(opnd_parts) != 2 or opnd_parts[0] == opnd_parts[1]:
             error_message(7, line.line_number) # Bad operand
-            return -1
+            return err
 
         source = get_reg_value(opnd_parts[0])
         if not source:
             error_message(7, line.line_number) # Bad operand
-            return -1
+            return err
 
         dest = get_reg_value(opnd_parts[1])
         if not dest:
             error_message(7, line.line_number) # Bad operand
-            return -1
+            return err
 
         # Check that a and b's bit lengths match: can't copy a 16-bit into an 8-bit
         source_size = int(source, 16)
         dest_size = int(dest, 16)
         if (source_size > 5 and dest_size < 8) or (source_size < 8 and dest_size > 5):
             error_message(7, line.line_number) # Bad operand
-            return -1
+            return err
         opnd_str = "0x" + source + dest
         line.op_type = ADDR_MODE_IMMEDIATE_SPECIAL
     elif op_name[0:3] in ("PUL", "PSH"):
@@ -537,24 +552,24 @@ def decode_opnd(an_opnd, line):
         post_byte = 0
         if not an_opnd:
             error_message(8, line.line_number) # Bad operand
-            return -1
+            return err
         opnd_parts = an_opnd.split(',')
         if len(opnd_parts) == 1:
             # A single register
             if an_opnd == op_name[3]:
                 # Can't PUL or PSH a register to itself, eg. PULU U doesn't make sense
                 error_message(8, line.line_number) # Bad operand
-                return -1
+                return err
             post_byte = get_pull_reg_value(an_opnd)
             if post_byte == -1:
                 error_message(8, line.line_number) # Bad operand
-                return -1
+                return err
         else:
             for part in opnd_parts:
                 reg_val = get_pull_reg_value(part)
                 if reg_val == -1:
                     error_message(8, line.line_number) # Bad operand
-                    return -1
+                    return err
                 post_byte += reg_val
         opnd_str = str(post_byte)
         line.op_type = ADDR_MODE_IMMEDIATE_SPECIAL
@@ -586,7 +601,7 @@ def decode_opnd(an_opnd, line):
                             opnd_str = decode_indexed(an_opnd, line)
                             if opnd_str == "":
                                 error_message(8, line.line_number) # Bad operand
-                                return -1
+                                return err
                             break
 
                     # FROM 1.2.0: Handle quotes
@@ -603,7 +618,7 @@ def decode_opnd(an_opnd, line):
             if app_state.pass_count == 2:
                 # Any new label seen on pass 2 indicates an error
                 error_message(3, line.line_number) # No label defined
-                return -1
+                return err
 
             # Make a new label
             app_state.labels.append({"name": opnd_str, "addr": "UNDEF"})
@@ -653,7 +668,7 @@ def decode_opnd(an_opnd, line):
                     line.index_address = opnd_value - (app_state.prog_count + 2)
                     if line.index_address < -128 or line.index_address > 127:
                         error_message(4, line.line_number) # Bad branch type: out of range offset
-                        return -1
+                        return err
                 else:
                     offset = 3 # PC + 1 byte of op + 2 bytes of delta
                     line.index_address = opnd_value - (app_state.prog_count + offset)
@@ -673,10 +688,10 @@ def decode_opnd(an_opnd, line):
     # ADDED 1.2.0: Check that ops expecting an 8-bit operand get one
     if line.expects_8b_opnd is True and line.op_type in (ADDR_MODE_IMMEDIATE, ADDR_MODE_DIRECT):
         # We do expect an 8-bit operand
-        if opnd_value < 0 or opnd_value > 255:
+        if opnd_value < -128 or opnd_value > 255:
             # But the value is out of range, so report an error
             error_message(10, line.line_number) # Bad branch type: out of range operand
-            return -1
+            return err
     line.opnd = opnd_value
     return opnd_value
 
