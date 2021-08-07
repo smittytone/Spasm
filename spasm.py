@@ -338,23 +338,12 @@ def parse_line(line, line_number):
         bool: False if an error occurred, or True.
     '''
     # Split the line at the line terminator to remove the carriage return
-    line_parts = line.splitlines()
-    line = line_parts[0]
+    line = line.splitlines()[0]
 
     # Check for comment lines
-    comment = ""
-    comment_start = line.find(";")
-    if comment_start != -1:
-        # Found a comment line so re-position it
-        line_parts = line.split(";", 1)
-        comment = ";" + line_parts[len(line_parts) - 1]
-        line = line_parts[0]
-    comment_start = line.find("*")
-    if comment_start != -1:
-        # Found a comment line so re-position it
-        line_parts = line.split("*", 1)
-        comment = "*" + line_parts[len(line_parts) - 1]
-        line = line_parts[0]
+    line, comment = find_comments(line, ";", " ")
+    line, comment = find_comments(line, "*", comment)
+    comment_start = 1 if comment != " " else -1
 
     # FROM 1.2.0: Check for quoted strings (only double-quotes for now)
     quote = ""
@@ -406,14 +395,15 @@ def parse_line(line, line_number):
     # Process the line's components
     # Check for an initial label
     label = line_parts[0]
-    if label[0] == "@":
+    #if label[0] == "@":
+    if label != " " and label.upper() not in ISA and label.upper() not in BSA:
         # Found a label - store it if we need to
         got_label = index_of_label(label)
         if got_label != -1:
             # The label has already been seen during assembly
             label = app_state.labels[got_label]
             if app_state.pass_count == 1:
-                if label["addr"] != "UNDEF":
+                if label["addr"] != "!!!!":
                     error_message(2, line_number) # Duplicate label
                     return False
                 # Set the label address
@@ -453,6 +443,15 @@ def parse_line(line, line_number):
         result = write_code(line_parts, line_data)
 
     return result
+
+
+def find_comments(line, symbol, comment):
+    l = line.find(symbol)
+    if l != -1:
+        # Found a comment line so re-position it
+        comment = symbol + line[l + 1:]
+        line = line[:l]
+    return (line, comment)
 
 
 def decode_op(an_op, line):
@@ -610,7 +609,8 @@ def decode_opnd(an_opnd, line):
                     if op_char not in (' ', '"'): opnd_str += op_char
                     if op_char == " " and quote_start is True: opnd_str += op_char
 
-    if opnd_str and opnd_str[0] == "@":
+    #if opnd_str and opnd_str[0] == "@":
+    if opnd_str and opnd_str[0].isalpha():
         # Operand is a label
         label_index = index_of_label(opnd_str)
         if label_index == -1:
@@ -621,9 +621,9 @@ def decode_opnd(an_opnd, line):
                 return err
 
             # Make a new label
-            app_state.labels.append({"name": opnd_str, "addr": "UNDEF"})
+            app_state.labels.append({"name": opnd_str, "addr": "!!!!"})
             show_verbose("Label " + opnd_str + " found (line " + str(line.line_number + 1) + ")")
-            opnd_str = "UNDEF"
+            opnd_str = "!!!!"
         else:
             label = app_state.labels[label_index]
             opnd_value = label["addr"]
@@ -899,13 +899,13 @@ def decode_indexed(opnd, line):
         else:
             # The string should be a number
             if left[0] == "$": left = "0x" + left[1:]
-            if left[0] == "@":
+            if left[0].isalpha(): #== "@":
                 label_index = index_of_label(left)
                 if label_index == -1:
                     if app_state.pass_count == 2:
                         error_message(3, line.line_number) # No label defined
                         return ""
-                    app_state.labels.append({"name": left, "addr": "UNDEF"})
+                    app_state.labels.append({"name": left, "addr": "!!!!"})
                     if app_state.pass_count == 1: show_verbose("Label " + left + " found on line " + str(line.line_number + 1))
                     # Set byte value to 129 to make sure we allow a 16-bit max. space
                     byte_value = 129
@@ -1022,12 +1022,12 @@ def get_int_value(num_str, size=8, do_twos=False):
         int: A positive integer value.
     '''
     value = 0
-    if num_str == "UNDEF":
+    if num_str == "!!!!":
         value = 0
     elif num_str[:2] == "0x":
         # Hex value
         value = int(num_str, 16)
-    elif num_str[0] == "@":
+    elif num_str[0].isalpha(): #== "@":
         # A label value
         label = app_state.labels[index_of_label(num_str)]
         value = label["addr"]
@@ -1809,9 +1809,8 @@ def show_version():
     '''
     Display Spasm's version
     '''
-    print(" ")
     print("SPASM " + VERSION)
-    print("SPASM copyright (c) 2019 Tony Smith (@smittytone)")
+    print("SPASM copyright (c) 2021 Tony Smith (@smittytone)")
 
 
 if __name__ == '__main__':
@@ -1896,7 +1895,7 @@ if __name__ == '__main__':
         # Process any named files
         if arg_files: handle_files(arg_files)
     else:
-        # By default get all the .asm files in the working directory
-        get_files()
+        # By default show help
+        show_help()
 
     sys.exit(0)
