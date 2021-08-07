@@ -187,6 +187,8 @@ BSA = (
     "BSR", 0x8D, 0x17
 )
 
+POPS = ("EQU", "RMB", "FCB", "FDB", "END", "ORG", "SETDP", "FCC")
+
 ##########################################################################
 # Application-specific classes                                           #
 ##########################################################################
@@ -396,7 +398,8 @@ def parse_line(line, line_number):
     # Check for an initial label
     label = line_parts[0]
     #if label[0] == "@":
-    if label != " " and label.upper() not in ISA and label.upper() not in BSA:
+    ulabel = label.upper()
+    if label != " " and ulabel not in ISA and ulabel not in BSA and ulabel not in POPS:
         # Found a label - store it if we need to
         got_label = index_of_label(label)
         if got_label != -1:
@@ -471,10 +474,10 @@ def decode_op(an_op, line):
     an_op = an_op.upper()
 
     # Check for pseudo-ops
-    pseudo_ops = ("EQU", "RMB", "FCB", "FDB", "END", "ORG", "SETDP", "FCC")
-    if an_op in pseudo_ops:
+    #pseudo_ops = ("EQU", "RMB", "FCB", "FDB", "END", "ORG", "SETDP", "FCC")
+    if an_op in POPS:
         line.oper = [an_op]
-        line.pseudo_op_type = pseudo_ops.index(an_op) + 1
+        line.pseudo_op_type = POPS.index(an_op) + 1
         return True
 
     # Check for regular instructions
@@ -569,7 +572,7 @@ def decode_opnd(an_opnd, line):
                 if reg_val == -1:
                     error_message(8, line.line_number) # Bad operand
                     return err
-                post_byte += reg_val
+                post_byte |= reg_val
         opnd_str = str(post_byte)
         line.op_type = ADDR_MODE_IMMEDIATE_SPECIAL
     else:
@@ -1004,8 +1007,8 @@ def get_pull_reg_value(reg):
         int: The register value.
     '''
     reg = reg.upper()
-    regs = ("X", "Y", "U", "S", "PC", "A", "B", "CC", "DP", "D")
-    vals = (16, 32, 64, 64, 128, 2, 4, 1, 8, 6)
+    regs = ("CC", "A", "B", "D", "DP", "X", "Y", "S", "U", "PC")
+    vals = (1, 2, 4, 6, 8, 16, 32, 64, 64, 128)
     if reg in regs: return vals[regs.index(reg)]
     return -1
 
