@@ -48,6 +48,7 @@ ADDR_MODE_INHERENT          = 5 # pylint: disable=C0326;
 ADDR_MODE_IMMEDIATE_SPECIAL = 11 # pylint: disable=C0326;
 BRANCH_MODE_SHORT           = 1 # pylint: disable=C0326;
 BRANCH_MODE_LONG            = 2 # pylint: disable=C0326;
+ADDRESSING_NONE             = 999999
 
 ##########################################################################
 # The main 6809 instruction set in the form: mnemonic plus               #
@@ -398,8 +399,7 @@ def parse_line(line, line_number):
     # Check for an initial label
     label = line_parts[0]
     #if label[0] == "@":
-    ulabel = label.upper()
-    if label != " " and ulabel not in ISA and ulabel not in BSA and ulabel not in POPS:
+    if label != " " and check_reserved(label):
         # Found a label - store it if we need to
         got_label = index_of_label(label)
         if got_label != -1:
@@ -456,6 +456,28 @@ def find_comments(line, symbol, comment):
         line = line[:l]
     return (line, comment)
 
+
+def check_reserved(label):
+    '''
+    Check that a possible label is not a reserved word.
+
+    Args:
+        laber (str): The possible label.
+
+    Returns:
+        True if the label is not a reserved word, or False.
+    '''
+    label = label.upper()
+    if label in POPS:
+        return False
+    if label in ISA:
+        return False
+    if label in BSA:
+        return False
+    if label[0] == "L":
+        if label[1:] in BSA:
+            return False
+    return True
 
 def decode_op(an_op, line):
     '''
@@ -602,7 +624,7 @@ def decode_opnd(an_opnd, line):
                             # It's an indexed addressing operand, so decode it
                             opnd_str = decode_indexed(an_opnd, line)
                             if opnd_str == "":
-                                error_message(8, line.line_number) # Bad operand
+                                error_message(5, line.line_number) # Bad operand
                                 return err
                             break
 
@@ -655,7 +677,7 @@ def decode_opnd(an_opnd, line):
             line.pseudo_op_value = opnd_str
             opnd_value = 0
         elif line.is_indirect is False:
-            # Get the value for any operand other than indexed
+            # Get the value for any operand
             size = 16
             if line.expects_8b_opnd is True and line.op_type == ADDR_MODE_IMMEDIATE: size = 8
             opnd_value = get_int_value(opnd_str, size)
@@ -803,7 +825,7 @@ def process_pseudo_op(line_parts, line):
             opnd_value = opnd_value & 0xFFFF
             if app_state.pass_count == 1:
                 show_verbose("The two bytes at 0x" + to_hex(app_state.prog_count, 4) + " set to 0x" +
-                             (opnd_value, 4) + " (line " + str(line.line_number + 1) + ")")
+                             to_hex(opnd_value, 4) + " (line " + str(line.line_number + 1) + ")")
             result = write_code(line_parts, line)
             poke(app_state.prog_count, (opnd_value >> 8) & 0xFF)
             poke(app_state.prog_count + 1, opnd_value & 0xFF)
@@ -874,7 +896,7 @@ def decode_indexed(opnd, line):
     line.op_type = ADDR_MODE_INDEXED
     opnd_value = 0
     reg = 0
-    byte_value = -1
+    byte_value = ADDRESSING_NONE
     is_extended = False
     index_parts = opnd.split(',')
 
@@ -922,28 +944,32 @@ def decode_indexed(opnd, line):
                     label = app_state.labels[label_index]
                     byte_value = label["addr"]
             else:
-                byte_value = get_int_value(left, is_negative)
+                byte_value = get_int_value(left)
+                if (byte_value < -32768 or byte_value > 32767):
+                    return ""
             if byte_value > 127 or byte_value < -128:
                 # 16-bit
                 opnd_value += 0x89
+                byte_value = get_int_value(left, 16, True)
             elif line.is_indirect is True or byte_value > 15 or byte_value < -16:
                 # 8-bit
                 opnd_value += 0x88
+                byte_value = get_int_value(left, 8, True)
             elif byte_value == 0:
                 # Trap a zero offset call
                 opnd_value += + 0x84
-                byte_value = -1
+                byte_value = ADDRESSING_NONE
             else:
                 # 5 bit offset so retain only bits 0-5
                 opnd_value = byte_value & 0x1F
-                byte_value = -1
+                byte_value = ADDRESSING_NONE
     else:
         # Nothing left of the comma
         opnd_value = 0x84
 
     if is_extended is False:
         # Decode the right side of the operand
-        right = index_parts[1]
+        right = index_parts[1].lstrip()
         # Remove right hand bracket (indirect) if present
         if right[-1] == "]": right = right[:-1]
         # Operand is of the 'n,PCR' type - just set bit 2
@@ -958,7 +984,7 @@ def decode_indexed(opnd, line):
             # Set the analysed string to the register
             right = right[0]
             # Ignore any prefix value
-            byte_value = -1
+            byte_value = ADDRESSING_NONE
         if right[0] == "-":
             if right[1] == "-": # ',--R'
                 opnd_value = 0x93 if line.is_indirect else 0x83
@@ -969,7 +995,7 @@ def decode_indexed(opnd, line):
             # Set the analysed string to the register
             right = right[-1]
             # Ignore any prefix value
-            byte_value = -1
+            byte_value = ADDRESSING_NONE
         # Add in the register value (assume X, which equals 0 in the register coding)
         if right.upper() == "Y": reg = 0x20
         if right.upper() == "U": reg = 0x40
@@ -1031,6 +1057,10 @@ def get_int_value(num_str, size=8, do_twos=False):
         int: A positive integer value.
     '''
     value = 0
+    is_negative = False
+    if num_str[0] == "-":
+        num_str = num_str[1:]
+        is_negative = True
     if num_str == "!!!!":
         value = 0
     elif num_str[:2] == "0x":
@@ -1048,6 +1078,8 @@ def get_int_value(num_str, size=8, do_twos=False):
         value = ord(num_str[1])
     else:
         value = int(num_str)
+
+    if is_negative: value *= -1
 
     # FROM 1.2.0: Check for negative values - cast to 2's comp
     if value < 0 and do_twos is True:
@@ -1166,13 +1198,14 @@ def write_code(line_parts, line):
             poke(app_state.prog_count, line.opnd)
             if app_state.pass_count == 2: byte_str += to_hex(line.opnd)
             app_state.prog_count += 1
-            if line.index_address != -1:
+            if line.index_address != ADDRESSING_NONE:
                 line.opnd = line.index_address
-                if line.opnd > 127 or line.opnd < -128:
+                # By this point, all values should be unsigned
+                if line.opnd > 255:
                     # Do 16-bit address
                     line.op_type = ADDR_MODE_EXTENDED
-                elif line.opnd > 127 or line.opnd < -128:
-                    # Do 16-bit address
+                else:
+                    # Do 8-bit address
                     line.op_type = ADDR_MODE_INDEXED
             else:
                 line.op_type = ADDR_MODE_NONE
@@ -1211,7 +1244,7 @@ def write_code(line_parts, line):
 
         # Handle comment-only lines
         if line.comment_start != -1:
-            print(display_str + set_spacer(22) + line_parts[0])
+            print(display_str + set_spacer(10) + line_parts[0])
             return True
 
         # Add the 16-bit address
@@ -1245,10 +1278,10 @@ def write_code(line_parts, line):
         # Add the comment, if there is one
         extra_str = ""
         if len(line_parts) > 3 and len(line_parts[3]) > 1:
-            if len(display_str) > 54:
-                extra_str = display_str[55:]
-                display_str = display_str[:55]
-            display_str += (set_spacer(58, len(display_str)) + line_parts[3])
+            if len(display_str) > 64:
+                extra_str = display_str[65:]
+                display_str = display_str[:65]
+            display_str += (set_spacer(68, len(display_str)) + line_parts[3])
 
         # And output the line
         print(display_str)
