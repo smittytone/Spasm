@@ -887,7 +887,7 @@ def decode_indexed(opnd, line):
             is_extended = True
             opnd_value = 0x10
             # Remove front bracket
-            left = left[1:-1]
+            left = left[1:]
 
         # Decode left of comma: check for specific registers first
         # as these are fixed values in the ISA
@@ -901,7 +901,13 @@ def decode_indexed(opnd, line):
             opnd_value += 0x8B
         else:
             # The string should be a number
+            is_negative = False
+            if left[0] == "-":
+                left = left[1:]
+                is_negative = True
             if left[0] == "$": left = "0x" + left[1:]
+            if is_negative:
+                left = "-" + left
             if left[0].isalpha(): #== "@":
                 label_index = index_of_label(left)
                 if label_index == -1:
@@ -916,7 +922,7 @@ def decode_indexed(opnd, line):
                     label = app_state.labels[label_index]
                     byte_value = label["addr"]
             else:
-                byte_value = get_int_value(left)
+                byte_value = get_int_value(left, is_negative)
             if byte_value > 127 or byte_value < -128:
                 # 16-bit
                 opnd_value += 0x89
