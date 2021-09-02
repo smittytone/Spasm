@@ -16,33 +16,33 @@ Input is in the form of one or more `.asm` files which are text files containing
 ```
 ; All comments go after a semi-colon
 
-@tab_len    EQU %11111111       ; Table length in binary
-@object     EQU $EE01           ; Object address in hex
-@entlen     EQU $08             ; Table entry length
-@search     LDB #@tab_len
-            BEQ @exit           ; Exit if the table length is zero
-            LDY #@object
-            LDX #@store
-@loop       PSHS B              ; start loop
+tab_len     EQU %11111111       ; Table length in binary
+object      EQU $EE01           ; Object address in hex
+entlen      EQU $08             ; Table entry length
+search      LDB #tab_len
+            BEQ exit           ; Exit if the table length is zero
+            LDY #object
+            LDX #store
+loop        PSHS B              ; start loop
             LDA #$2
-@nextch     LDB A,Y
+nextch      LDB A,Y
             CMPA B,X
             LEAX 3,X
             CMPA $2A,Y
-            BNE @nexten         ; break out of loop
+            BNE nexten         ; break out of loop
             DECB
-            BPL @nextch
+            BPL nextch
             PULS B
             LDA #$FF
             RTS
-@nexten     PULS B
+nexten      PULS B
             DECB
-            BEQ @exit
-            LEAX @entlen,X       ; Interesting problem: this could add 0, 1 or 2
-                                 ; bytes depending on the value of @entlen, which
-                                 ; might not have been specified on the first pass
-@exit       CLRA
-@store      RMB @entlen
+            BEQ exit
+            LEAX entlen,X       ; Interesting problem: this could add 0, 1 or 2
+                                ; bytes depending on the value of entlen, which
+                                ; might not have been specified on the first pass
+exit        CLRA
+store       RMB entlen
             RTS                  ; return
 ```
 
@@ -58,7 +58,7 @@ Various literal types are supported. Literals are assumed to be decimal, but you
 
 ### Labels ###
 
-As the above example shows, *spasm* supports the use of labels to represent values and memory locations (eg. for jumps and branches). All labels **must** be prefixed with `@`.
+As the above example shows, *spasm* supports the use of labels to represent values and memory locations (eg. for jumps and branches). From version 1.2, labels should no longer be prefixed with `@`.
 
 ### Comments ###
 
@@ -68,19 +68,19 @@ Comments can be entered by prefixing them with a `;` or `*` (for DREAM fans). At
 
 *spasm*  makes use of the following assembler directives (aka pseudo-ops):
 
-- `EQU` &mdash; assign a value to a label, eg. `@label EQU 255`.
+- `EQU` &mdash; assign a value to a label, eg. `label EQU 255`.
 - `END` &mdash; optional end-of-code marker.
-- `RMB` &mdash; reserve *n* memory bytes at this address, eg. `@label RMB 8 ; add 8 bytes for data storage`.
+- `RMB` &mdash; reserve *n* memory bytes at this address, eg. `label RMB 8 ; add 8 bytes for data storage`.
 - `FCB` &mdash; store the following 8-bit value or values at this address, eg.
-    - `@label FCB $FF          ; poke 255 to this address`.
-    - `@label FCB $FF,$01,$02  ; poke 255, 0, 2 to sequential addresses from this`.
+    - `label FCB $FF          ; poke 255 to this address`.
+    - `label FCB $FF,$01,$02  ; poke 255, 0, 2 to sequential addresses from this`.
 - `FCC` &mdash; store the following string at this address, eg.
-    - `@label FCC "Message"    ; poke 77,101,115,115,97,103,101 to sequential addresses`.
+    - `label FCC "Message"    ; poke 77,101,115,115,97,103,101 to sequential addresses`.
 - `FDB` &mdash; store the following 16-bit value or values at this address, eg.
-    - `@label FDB $FF00        ; poke 65280 to this address`.
-    - `@label FDB $FF00,$FF01  ; poke 65280, 65281 to sequential addresses`.
+    - `label FDB $FF00        ; poke 65280 to this address`.
+    - `label FDB $FF00,$FF01  ; poke 65280, 65281 to sequential addresses`.
     - **Note** The 6809 expects the most-significant byte at the lowest address.
-- `ORG` &mdash; continue assembly at the supplied address, eg. `@label ORG $3FFF ; continue assembly at address 16383`.
+- `ORG` &mdash; continue assembly at the supplied address, eg. `label ORG $3FFF ; continue assembly at address 16383`.
 
 ### Endianism ###
 
@@ -197,7 +197,8 @@ See below for a full list of *spasm* switches.
 ## Release Notes ##
 
 - 1.2.1 &mdash; *5 August 2021*
-    - Assorted small bug fixes.
+    - Remove requirement for `@` as a label prefix.
+    - Assorted bug fixes.
 - 1.2.0 &mdash; *29 May 2019*
     - *Improvements*
         - Fully support `ORG` directive: assemble code into multiple chunks.
