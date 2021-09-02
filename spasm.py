@@ -4,7 +4,7 @@
 'SPASM' -- Smittytone's Primary 6809 ASeMmbler
 
 Version:
-    1.2.1
+    1.3.0
 
 Copyright:
     2021, Tony Smith (@smittytone)
@@ -20,231 +20,22 @@ License:
 import os
 import sys
 import json
-
-##########################################################################
-# Application-specific constants                                         #
-##########################################################################
-
-VERSION = "1.2.1"
-
-ERRORS = {"0": "No error",
-          "1": "Bad mnemonic/opcode",
-          "2": "Duplicate label",
-          "3": "Undefined label",
-          "4": "Bad branch op",
-          "5": "Bad operand",
-          "6": "Decode error",
-          "7": "Bad TFR/EXG operand",
-          "8": "Bad PUL/PSH operand",
-          "9": "Bad address",
-          "10": "8-bit operand expected"} # ADDED 1.2.0
-
-ADDR_MODE_NONE              = 0 # pylint: disable=C0326;
-ADDR_MODE_IMMEDIATE         = 1 # pylint: disable=C0326;
-ADDR_MODE_DIRECT            = 2 # pylint: disable=C0326;
-ADDR_MODE_INDEXED           = 3 # pylint: disable=C0326;
-ADDR_MODE_EXTENDED          = 4 # pylint: disable=C0326;
-ADDR_MODE_INHERENT          = 5 # pylint: disable=C0326;
-ADDR_MODE_IMMEDIATE_SPECIAL = 11 # pylint: disable=C0326;
-BRANCH_MODE_SHORT           = 1 # pylint: disable=C0326;
-BRANCH_MODE_LONG            = 2 # pylint: disable=C0326;
-ADDRESSING_NONE             = 999999
-
-##########################################################################
-# The main 6809 instruction set in the form: mnemonic plus               #
-# addressing-specific byte vales, where -1 equals 'not supported'.       #
-# The addressing sequence is:                                            #
-# immediate, direct, indexed, extended, inherent                         #
-##########################################################################
-
-ISA = (
-    "ABX", -1, -1, -1, -1, 0x3A,
-    "ADCA", 0x89, 0x99, 0xA9, 0xB9, -1,
-    "ADCB", 0xC9, 0xD9, 0xE9, 0xF9, -1,
-    "ADDA", 0x8B, 0x9B, 0xAB, 0xBB, -1,
-    "ADDB", 0xCB, 0xDB, 0xEB, 0xFB, -1,
-    "ADDD", 0xC3, 0xD3, 0xE3, 0xF3, -1,
-    "ANDA", 0x84, 0x94, 0xA4, 0xB4, -1,
-    "ANDB", 0xC4, 0xD4, 0xE4, 0xF4, -1,
-    "ANDCC", 0x1C, -1, -1, -1, -1,
-    "ASL", -1, 0x08, 0x68, 0x78, -1,
-    "ASLA", -1, -1, -1, -1, 0x48,
-    "ASLB", -1, -1, -1, -1, 0x58,
-    "ASR", -1, 0x07, 0x67, 0x77, -1,
-    "ASRA", -1, -1, -1, -1, 0x47,
-    "ASRB", -1, -1, -1, -1, 0x57,
-    "BITA", 0x85, 0x95, 0xA5, 0xB5, -1,
-    "BITB", 0xC5, 0xD5, 0xE5, 0xF5, -1,
-    "CLR", -1, 0x0F, 0x6F, 0x7F, -1,
-    "CLRA", -1, -1, -1, -1, 0x4F,
-    "CLRB", -1, -1, -1, -1, 0x5F,
-    "CMPA", 0x81, 0x91, 0xA1, 0xB1, -1,
-    "CMPB", 0xC1, 0xD1, 0xE1, 0xF1, -1,
-    "CMPD", 0x1083, 0x1093, 0x10A3, 0x10B3, -1,
-    "CMPS", 0x118C, 0x119C, 0x11AC, 0x11BC, -1,
-    "CMPU", 0x1183, 0x1193, 0x11A3, 0x11B3, -1,
-    "CMPX", 0x8C, 0x9C, 0xAC, 0xBC, -1,
-    "CMPY", 0x108C, 0x109C, 0x10AC, 0x10BC, -1,
-    "COM", -1, 0x03, 0x63, 0x73, -1,
-    "COMA", -1, -1, -1, -1, 0x43,
-    "COMB", -1, -1, -1, -1, 0x53,
-    "CWAIT", 0x3C, -1, -1, -1, -1,
-    "DAA", -1, -1, -1, -1, 0x19,
-    "DEC", -1, 0x0A, 0x6A, 0x7A, -1,
-    "DECA", -1, -1, -1, -1, 0x4A,
-    "DECB", -1, -1, -1, -1, 0x5A,
-    "EORA", 0x88, 0x98, 0xA8, 0xB8, -1,
-    "EORB", 0xC8, 0xD8, 0xE8, 0xF8, -1,
-    "EXG", 0x1E, -1, -1, -1, -1,
-    "INC", -1, 0x0C, 0x6C, 0x7C, -1,
-    "INCA", -1, -1, -1, -1, 0x4C,
-    "INCB", -1, -1, -1, -1, 0x5C,
-    "JMP", -1, 0x0E, 0x6E, 0x7E, -1,
-    "JSR", -1, 0x9D, 0xAD, 0xBD, -1,
-    "LDA", 0x86, 0x96, 0xA6, 0xB6, -1,
-    "LDB", 0xC6, 0xD6, 0xE6, 0xF6, -1,
-    "LDD", 0xCC, 0xDC, 0xEC, 0xFC, -1,
-    "LDS", 0x10CE, 0x10DE, 0x10EE, 0x10FE, -1,
-    "LDU", 0xCE, 0xDE, 0xEE, 0xFE, -1,
-    "LDX", 0x8E, 0x9E, 0xAE, 0xBE, -1,
-    "LDY", 0x108E, 0x109E, 0x10AE, 0x10BE, -1,
-    "LEAS", -1, -1, 0x32, -1, -1,
-    "LEAU", -1, -1, 0x33, -1, -1,
-    "LEAX", -1, -1, 0x30, -1, -1,
-    "LEAY", -1, -1, 0x31, -1, -1,
-    "LSL", -1, 0x08, 0x68, 0x78, -1,
-    "LSLA", -1, -1, -1, -1, 0x48,
-    "LSLB", -1, -1, -1, -1, 0x58,
-    "LSR", -1, 0x04, 0x64, 0x74, -1,
-    "LSRA", -1, -1, -1, -1, 0x44,
-    "LSRB", -1, -1, -1, -1, 0x54,
-    "MUL", -1, -1, -1, -1, 0x3D,
-    "NEG", -1, 0x00, 0x60, 0x70, -1,
-    "NEGA", -1, -1, -1, -1, 0x40,
-    "NEGB", -1, -1, -1, -1, 0x50,
-    "NOP", -1, -1, -1, -1, 0x12,
-    "ORA", 0x8A, 0x9A, 0xAA, 0xBA, -1,
-    "ORB", 0xCA, 0xDA, 0xEA, 0xFA, -1,
-    "ORCC", 0x1A, -1, -1, -1, -1,
-    "PSHS", 0x34, -1, -1, -1, -1,
-    "PSHU", 0x36, -1, -1, -1, -1,
-    "PULS", 0x35, -1, -1, -1, -1,
-    "PULU", 0x37, -1, -1, -1, -1,
-    "ROL", -1, 0x09, 0x69, 0x79, -1,
-    "ROLA", -1, -1, -1, -1, 0x49,
-    "ROLB", -1, -1, -1, -1, 0x59,
-    "ROR", -1, 0x06, 0x66, 0x76, -1,
-    "RORA", -1, -1, -1, -1, 0x46,
-    "RORB", -1, -1, -1, -1, 0x56,
-    "RTI", -1, -1, -1, -1, 0x3B,
-    "RTS", -1, -1, -1, -1, 0x39,
-    "SBCA", 0x82, 0x92, 0xA2, 0xB2, -1,
-    "SBCB", 0xC2, 0xD2, 0xE2, 0xF2, -1,
-    "SEX", -1, -1, -1, -1, 0x1D,
-    "STA", -1, 0x97, 0xA7, 0xB7, -1,
-    "STB", -1, 0xD7, 0xE7, 0xF7, -1,
-    "STD", -1, 0xDD, 0xED, 0xFD, -1,
-    "STS", -1, 0x10DF, 0x10EF, 0x10FF, -1,
-    "STU", -1, 0xDF, 0xEF, 0xFF, -1,
-    "STX", -1, 0x9F, 0xAF, 0xBF, -1,
-    "STY", -1, 0x109F, 0x10AF, 0x10BF, -1,
-    "SUBA", 0x80, 0x90, 0xA0, 0xB0, -1,
-    "SUBB", 0xC0, 0xD0, 0xE0, 0xF0, -1,
-    "SUBD", 0x83, 0x93, 0xA3, 0xB3, -1,
-    "SYNC", -1, -1, -1, -1, 0x13,
-    "SWI", -1, -1, -1, -1, 0x3F,
-    "SWI2", -1, -1, -1, -1, 0x103F,
-    "SWI3", -1, -1, -1, -1, 0x113F,
-    "TFR", 0x1F, -1, -1, -1, -1,
-    "TST", -1, 0x0D, 0x6D, 0x7D, -1,
-    "TSTA", -1, -1, -1, -1, 0x4D,
-    "TSTB", -1, -1, -1, -1, 0x5D
-)
-
-##########################################################################
-# The 6809 branch instruction set in the form: mnemonic plus             #
-# addressing-specific byte vales. The addressing sequence is:            #
-# short, long                                                            #
-##########################################################################
-
-BSA = (
-    "BRA", 0x20, 0x16,
-    "BHI", 0x22, 0x1022,
-    "BLS", 0x23, 0x1023,
-    "BCC", 0x24, 0x1024,
-    "BHS", 0x24, 0x1024,
-    "BLO", 0x25, 0x1025,
-    "BCS", 0x25, 0x1025,
-    "BNE", 0x26, 0x1026,
-    "BEQ", 0x27, 0x1027,
-    "BVC", 0x28, 0x1028,
-    "BVS", 0x29, 0x1029,
-    "BPL", 0x2A, 0x102A,
-    "BMI", 0x2B, 0x102B,
-    "BGE", 0x2C, 0x102C,
-    "BLT", 0x2D, 0x102D,
-    "BGT", 0x2E, 0x102E,
-    "BLE", 0x2F, 0x102F,
-    "BSR", 0x8D, 0x17
-)
-
-POPS = ("EQU", "RMB", "FCB", "FDB", "END", "ORG", "SETDP", "FCC")
-
-##########################################################################
-# Application-specific classes                                           #
-##########################################################################
-
-class LineData:
-    '''
-    A very simple class to hold the temporary decode data for a line of
-    6809 assembly code.
-    '''
-
-    def __init__(self):
-        self.oper = []
-        self.opnd = -1
-        self.op_type = 0
-        self.branch_op_type = 0
-        self.pseudo_op_type = 0
-        self.pseudo_op_value = ""
-        self.index_address = -1
-        self.line_number = 0
-        self.comment_start = -1
-        self.is_indirect = False
-        self.is_indexed = False
-        self.expects_8b_opnd = False # ADDED 1.2.0
-
-class AppState:
-    '''
-    A very simple class to hold the application's state and preference data.
-    '''
-
-    def __init__(self):
-        self.verbose = True
-        self.start_address = 0x0000
-        self.base_address = 0x0000
-        self.prog_count = 0
-        self.pass_count = 0
-        self.show_upper = 0
-        self.num_bytes = 256
-        self.labels = None
-        self.code = None
-        self.out_file = None
-        self.chunk = None
+from constants import *
+from classes import *
 
 
 ##########################################################################
 # Functions                                                              #
 ##########################################################################
 
-def assemble_file(file_path):
-    '''
+'''
     Assemble a single '.asm' file using a two-pass process to identify
     labels and pseudo-ops, etc.
 
     Args:
         file_path (str): The path to a .asm file.
-    '''
+'''
+def assemble_file(file_path):
     # Initialize the storage arrays
     app_state.labels = []
     app_state.code = []
@@ -326,20 +117,20 @@ def assemble_file(file_path):
         print(items, display_str)
 
 
+'''
+Process a single line of assembly, on a per-pass basis.
+
+Each line is segmented by space characters, and we remove extra spaces from all
+line parts other than comments. You cannot have a space set using the Ascii indicator, '
+
+Args:
+    line        (list): A line of program as a raw string.
+    line_number (int):  The current line (starts at 0).
+
+Returns:
+    bool: False if an error occurred, or True.
+'''
 def parse_line(line, line_number):
-    '''
-    Process a single line of assembly, on a per-pass basis.
-
-    Each line is segmented by space characters, and we remove extra spaces from all
-    line parts other than comments. You cannot have a space set using the Ascii indicator, '
-
-    Args:
-        line        (list): A line of program as a raw string.
-        line_number (int):  The current line (starts at 0).
-
-    Returns:
-        bool: False if an error occurred, or True.
-    '''
     # Split the line at the line terminator to remove the carriage return
     line = line.splitlines()[0]
 
@@ -457,16 +248,16 @@ def find_comments(line, symbol, comment):
     return (line, comment)
 
 
+'''
+Check that a possible label is not a reserved word.
+
+Args:
+    laber (str): The possible label.
+
+Returns:
+    True if the label is not a reserved word, or False.
+'''
 def check_reserved(label):
-    '''
-    Check that a possible label is not a reserved word.
-
-    Args:
-        laber (str): The possible label.
-
-    Returns:
-        True if the label is not a reserved word, or False.
-    '''
     label = label.upper()
     if label in POPS:
         return False
@@ -479,19 +270,20 @@ def check_reserved(label):
             return False
     return True
 
+'''
+Check that the specified op from the listing is a valid mnemonic.
+
+Args:
+    an_op (str):      The extracted mnemonic.
+    line  (LineData): An object representing the decoded line.
+
+Returns:
+    list: Contains 1 item (pseudo op), 2 items (branch op) or 6 items (op).
+            Each list contains the op name then integers for the opcode's machine
+            code values for each available addressing mode (or -1 for an unknown op)
+'''
 def decode_op(an_op, line):
-    '''
-    Check that the specified op from the listing is a valid mnemonic.
 
-    Args:
-        an_op (str):      The extracted mnemonic.
-        line  (LineData): An object representing the decoded line.
-
-    Returns:
-        list: Contains 1 item (pseudo op), 2 items (branch op) or 6 items (op).
-              Each list contains the op name then integers for the opcode's machine
-              code values for each available addressing mode (or -1 for an unknown op)
-    '''
     # Make mnemonic upper case
     an_op = an_op.upper()
 
@@ -526,17 +318,17 @@ def decode_op(an_op, line):
     return False
 
 
+'''
+This function decodes the operand.
+
+Args:
+    an_opnd (str): The extracted operand.
+    line  (LineData): An object representing the decoded line.
+
+Returns
+    int: the operand value, or "ERROR" if the operand value could not be determined
+'''
 def decode_opnd(an_opnd, line):
-    '''
-    This function decodes the operand.
-
-    Args:
-        an_opnd (str): The extracted operand.
-        line  (LineData): An object representing the decoded line.
-
-    Returns
-        int: the operand value, or "ERROR" if the operand value could not be determined
-    '''
     opnd_str = ""
     op_name = ""
     opnd_value = 0
@@ -721,17 +513,17 @@ def decode_opnd(an_opnd, line):
     return opnd_value
 
 
+'''
+Process assembler pseudo-ops, ie. directives with specific assembler-level functionality.
+
+Args:
+    line_parts (list):       The program components of the current line (see 'parse_line()').
+    line       (DecodeData): The decoded line data.
+
+Returns:
+    bool: False if an error occurred, or True.
+'''
 def process_pseudo_op(line_parts, line):
-    '''
-    Process assembler pseudo-ops, ie. directives with specific assembler-level functionality.
-
-    Args:
-        line_parts (list):       The program components of the current line (see 'parse_line()').
-        line       (DecodeData): The decoded line data.
-
-    Returns:
-        bool: False if an error occurred, or True.
-    '''
     result = False
     opnd_value = line.opnd
     label_name = line_parts[0]
@@ -866,33 +658,33 @@ def process_pseudo_op(line_parts, line):
     return result
 
 
+'''
+Get a specific chunk from its address.
+
+Args:
+    an_address (int): The chunk address.
+
+Returns:
+    Chunk: The required chunk.
+'''
 def chunk_from_address(address):
-    '''
-    Get a specific chunk from its address.
-
-    Args:
-        an_address (int): The chunk address.
-
-    Returns:
-        Chunk: The required chunk.
-    '''
     for chunk in app_state.code:
         if chunk["address"] == address: return chunk
     print("ERROR -- mis-addressed chunk")
     sys.exit(1)
 
 
+'''
+Decode the indexed addressing operand.
+
+Args:
+    opnd (str):        The extracted operand.
+    line (DecodeData): The decoded line data.
+
+Returns:
+    str: The operand value as a string, or an empty string if there was an error.
+'''
 def decode_indexed(opnd, line):
-    '''
-    Decode the indexed addressing operand.
-
-    Args:
-        opnd (str):        The extracted operand.
-        line (DecodeData): The decoded line data.
-
-    Returns:
-        str: The operand value as a string, or an empty string if there was an error.
-    '''
     line.op_type = ADDR_MODE_INDEXED
     opnd_value = 0
     reg = 0
@@ -1011,16 +803,16 @@ def decode_indexed(opnd, line):
     return str(opnd_value)
 
 
+'''
+Return the machine code for the specific register as used in TFR and EXG ops.
+
+Args:
+    reg (str): The register name.
+
+Returns:
+    str: Single-character hex string
+'''
 def get_reg_value(reg):
-    '''
-    Return the machine code for the specific register as used in TFR and EXG ops.
-
-    Args:
-        reg (str): The register name.
-
-    Returns:
-        str: Single-character hex string
-    '''
     reg = reg.upper()
     regs = ("D", "X", "Y", "U", "S", "PC", "A", "B", "CC", "DP")
     vals = ("0", "1", "2", "3", "4", "5", "8", "9", "A", "B")
@@ -1028,16 +820,16 @@ def get_reg_value(reg):
     return ""
 
 
+'''
+Return the value for the specific register as used in PUL and PSH ops.
+
+Args:
+    reg (str): The register name.
+
+Returns:
+    int: The register value.
+'''
 def get_pull_reg_value(reg):
-    '''
-    Return the value for the specific register as used in PUL and PSH ops.
-
-    Args:
-        reg (str): The register name.
-
-    Returns:
-        int: The register value.
-    '''
     reg = reg.upper()
     regs = ("CC", "A", "B", "D", "DP", "X", "Y", "S", "U", "PC")
     vals = (1, 2, 4, 6, 8, 16, 32, 64, 64, 128)
@@ -1045,17 +837,17 @@ def get_pull_reg_value(reg):
     return -1
 
 
+'''
+Convert a prefixed string value to an integer.
+
+Args:
+    num_str (str): The known numeric string.
+    size    (int): The number of bits in the value
+
+Returns:
+    int: A positive integer value.
+'''
 def get_int_value(num_str, size=8, do_twos=False):
-    '''
-    Convert a prefixed string value to an integer.
-
-    Args:
-        num_str (str): The known numeric string.
-        size    (int): The number of bits in the value
-
-    Returns:
-        int: A positive integer value.
-    '''
     value = 0
     is_negative = False
     if num_str[0] == "-":
@@ -1090,31 +882,31 @@ def get_int_value(num_str, size=8, do_twos=False):
     return value
 
 
+'''
+Encode an integer to a 'str_len' length hex string.
+
+Args:
+    value   (int): The integer.
+    str_len (str): A string binary representation. Default: 2
+
+Returns:
+    str: The hex representation
+'''
 def to_hex(value, str_len=2):
-    '''
-    Encode an integer to a 'str_len' length hex string.
-
-    Args:
-        value   (int): The integer.
-        str_len (str): A string binary representation. Default: 2
-
-    Returns:
-        str: The hex representation
-    '''
     format_str = "{0:0" + str(str_len) + "X}"
     return format_str.format(value)
 
 
+'''
+Decode the supplied binary value (as a string, eg. '0010010') to an integer.
+
+Args:
+    bin_str (str): A string binary representation.
+
+Returns:
+    int: The intger value.
+'''
 def decode_binary(bin_str):
-    '''
-    Decode the supplied binary value (as a string, eg. '0010010') to an integer.
-
-    Args:
-        bin_str (str): A string binary representation.
-
-    Returns:
-        int: The intger value.
-    '''
     value = 0
     for i in range(0, len(bin_str)):
         bit = len(bin_str) - i - 1
@@ -1122,16 +914,16 @@ def decode_binary(bin_str):
     return value
 
 
+'''
+See if we have already encountered 'label_name' in the listing.
+
+Args:
+    label_name (str): The name of the found label.
+
+Returns:
+    int: The index of the label in the list, or -1 if it isn't yet recorded.
+'''
 def index_of_label(label_name):
-    '''
-    See if we have already encountered 'label_name' in the listing.
-
-    Args:
-        label_name (str): The name of the found label.
-
-    Returns:
-        int: The index of the label in the list, or -1 if it isn't yet recorded.
-    '''
     if app_state.labels:
         for label in app_state.labels:
             if label["name"] == label_name:
@@ -1141,17 +933,17 @@ def index_of_label(label_name):
     return -1
 
 
+'''
+Write out the machine code and, on the second pass, print out the listing.
+
+Args:
+    line_parts (list):       The program components of the current line (see 'parse_line()').
+    line       (DecodeData): The decoded line data.
+
+Returns:
+    bool: False in the instance of an error, otherwise True.
+'''
 def write_code(line_parts, line):
-    '''
-    Write out the machine code and, on the second pass, print out the listing.
-
-    Args:
-        line_parts (list):       The program components of the current line (see 'parse_line()').
-        line       (DecodeData): The decoded line data.
-
-    Returns:
-        bool: False in the instance of an error, otherwise True.
-    '''
     byte_str = ""
 
     if len(line.oper) > 1:
@@ -1294,14 +1086,14 @@ def write_code(line_parts, line):
     return True
 
 
-def poke(address, value):
-    '''
-    Add new byte values to the machine code storage.
+'''
+Add new byte values to the machine code storage.
 
-    Args:
-        address (int):  A 16-bit address in the store.
-        value   (int):  An 8-bit value to add to the store.
-    '''
+Args:
+    address (int):  A 16-bit address in the store.
+    value   (int):  An 8-bit value to add to the store.
+'''
+def poke(address, value):
     chunk = app_state.chunk
     if address - chunk["address"] > len(chunk["code"]) - 1:
         end_address = address - chunk["address"] - len(chunk["code"])
@@ -1319,14 +1111,14 @@ def poke(address, value):
         chunk["code"][address - chunk["address"]] = value
 
 
-def error_message(err_code, err_line):
-    '''
-    Display an error message.
+'''
+Display an error message.
 
-    Args:
-        err_code (int): The error type.
-        err_line (int): The program on which the error occurred.
-    '''
+Args:
+    err_code (int): The error type.
+    err_line (int): The program on which the error occurred.
+'''
+def error_message(err_code, err_line):
     if 0 < err_code < len(ERRORS):
         # Show standard message
         print("Error on line " + str(err_line + 1) + ": " + ERRORS[str(err_code)])
@@ -1335,23 +1127,23 @@ def error_message(err_code, err_line):
         print("Error on line " + str(err_line + 1) + ": " + str(err_code))
 
 
-def show_verbose(message):
-    '''
-    Display a message if verbose mode is enabled.
+'''
+Display a message if verbose mode is enabled.
 
-    Args:
-        messsage (str): The text to print.
-    '''
+Args:
+    messsage (str): The text to print.
+'''
+def show_verbose(message):
     if app_state.verbose is True: print(message)
 
 
-def disassemble_file(file_spec):
-    '''
-    Disassemble the specified .6809 or .rom file.
+'''
+Disassemble the specified .6809 or .rom file.
 
-    Args:
-        file_spec (str, bool): The path and the type of the file (True = .6809, False = .rom).
-    '''
+Args:
+    file_spec (str, bool): The path and the type of the file (True = .6809, False = .rom).
+'''
+def disassemble_file(file_spec):
     code_data = None
     file_data = None
     file_path = file_spec[0]
@@ -1619,17 +1411,17 @@ def disassemble_file(file_spec):
                         index_str = ""
 
 
+'''
+Determing the number of spaces to pad a printed line.
+
+Args:
+    a_max (int): The length of the padded line.
+    a_min (int): The length of the un-padded line.
+
+Returns:
+    str: A string of spaces to pad the line.
+'''
 def set_spacer(a_max, a_min=0):
-    '''
-    Determing the number of spaces to pad a printed line.
-
-    Args:
-        a_max (int): The length of the padded line.
-        a_min (int): The length of the un-padded line.
-
-    Returns:
-        str: A string of spaces to pad the line.
-    '''
     spaces = "                                                         "
     num = a_max - a_min
     # If the line is too long, just return a couple of spaces
@@ -1637,33 +1429,33 @@ def set_spacer(a_max, a_min=0):
     return spaces[:num]
 
 
+'''
+Convert a post-op byte value into a register name.
+
+Args:
+    byte_value (int): The post-op byte value.
+
+Returns:
+    str: The indicated register.
+'''
 def get_indexed_reg(byte_value):
-    '''
-    Convert a post-op byte value into a register name.
-
-    Args:
-        byte_value (int): The post-op byte value.
-
-    Returns:
-        str: The indicated register.
-    '''
     byte_value = (byte_value & 0x60) >> 5
     regs = ("X", "Y", "U", "S")
     if byte_value < 4: return regs[byte_value]
     return "N/A"
 
 
+'''
+Generic TFR/EXG operand string generator, converting a post-op byte value
+into disassembled output, eg. "A,B".
+
+Args:
+    byte_value (int): The post-op byte value.
+
+Returns:
+    str: The register string.
+'''
 def get_tfr_exg_regs(byte_value):
-    '''
-    Generic TFR/EXG operand string generator, converting a post-op byte value
-    into disassembled output, eg. "A,B".
-
-    Args:
-        byte_value (int): The post-op byte value.
-
-    Returns:
-        str: The register string.
-    '''
     reg_list = ("D", "X", "Y", "U", "S", "PC", "A", "B", "CC", "DP")
     from_nibble = (byte_value & 0xF0) >> 4
     to_nibble = byte_value & 0x0F
@@ -1672,43 +1464,43 @@ def get_tfr_exg_regs(byte_value):
     return from_str + "," + to_str
 
 
+'''
+Pass on the correct register lists for PSHS or PULS.
+
+Args:
+    byte_value (int): The post-op byte value.
+
+Returns:
+    str: The list of registers referenced in the operand.
+'''
 def get_puls_pshs_regs(byte_value):
-    '''
-    Pass on the correct register lists for PSHS or PULS.
-
-    Args:
-        byte_value (int): The post-op byte value.
-
-    Returns:
-        str: The list of registers referenced in the operand.
-    '''
     return get_pul_psh_regs(byte_value, ("CC", "A", "B", "DP", "X", "Y", "U", "PC"))
 
 
+'''
+Pass on the correct register lists for PSHU or PULU.
+
+Args:
+    byte_value (int): The post-op byte value..
+
+Returns:
+    str: The list of registers referenced in the operand.
+'''
 def get_pulu_pshu_regs(byte_value):
-    '''
-    Pass on the correct register lists for PSHU or PULU.
-
-    Args:
-        byte_value (int): The post-op byte value..
-
-    Returns:
-        str: The list of registers referenced in the operand.
-    '''
     return get_pul_psh_regs(byte_value, ("CC", "A", "B", "DP", "X", "Y", "S", "PC"))
 
 
+'''
+Generic PUL/PSH operand string generator.
+
+Args:
+    byte_value (int):  The post-op byte value.
+    reg_list   (list): Names of possible registers.
+
+Returns:
+    str: The list of registers referenced in the operand.
+'''
 def get_pul_psh_regs(byte_value, reg_tuple):
-    '''
-    Generic PUL/PSH operand string generator.
-
-    Args:
-        byte_value (int):  The post-op byte value.
-        reg_list   (list): Names of possible registers.
-
-    Returns:
-        str: The list of registers referenced in the operand.
-    '''
     output = ""
     for i in range(0, 8):
         if byte_value & (2 ** i) > 0:
@@ -1719,13 +1511,13 @@ def get_pul_psh_regs(byte_value, reg_tuple):
     return output
 
 
-def write_file(file_path=None):
-    '''
-    Write the assembled bytes, if any, to a .6809 file.
+'''
+Write the assembled bytes, if any, to a .6809 file.
 
-    Args:
-        file_path (str): The path of the output file.
-    '''
+Args:
+    file_path (str): The path of the output file.
+'''
+def write_file(file_path=None):
     # FROM 1.2.0: The 'code' field is a sequence of hex values
     if file_path:
         op_data = []
@@ -1744,10 +1536,10 @@ def write_file(file_path=None):
         print("File " + os.path.abspath(file_path) + " written")
 
 
+'''
+Determine all the '.asm' and '.6809' files in the script's directory.
+'''
 def get_files():
-    '''
-    Determine all the '.asm' and '.6809' files in the script's directory.
-    '''
     current_dir = os.getcwd()
     found_files = [found_file for found_file in os.listdir(current_dir) if os.path.isfile(os.path.join(current_dir, found_file))]
 
@@ -1781,29 +1573,29 @@ def get_files():
     handle_files(dis_files)
 
 
-def handle_files(the_files=None):
-    '''
-    Pass on all supplied '.asm' files on for assembly, '.6809' or '.rom' files for disassembly.
+'''
+Pass on all supplied '.asm' files on for assembly, '.6809' or '.rom' files for disassembly.
 
-    Args:
-        the_files (list): The .asm, .rom or .6809 files.
-    '''
+Args:
+    the_files (list): The .asm, .rom or .6809 files.
+'''
+def handle_files(the_files=None):
     if the_files:
         for one_file in the_files:
             if one_file[-2:] == "sm": assemble_file(one_file)
             if one_file[-2:] in ("09", "om"): disassemble_file((one_file, True))
 
 
+'''
+Pass on all supplied '.asm' files on for assembly, '.6809' or '.rom' files for disassembly.
+
+Args:
+    the_files (list): The .asm, .rom or .6809 files.
+
+Returns:
+    int: The numerical value
+'''
 def str_to_int(num_str):
-    '''
-    Pass on all supplied '.asm' files on for assembly, '.6809' or '.rom' files for disassembly.
-
-    Args:
-        the_files (list): The .asm, .rom or .6809 files.
-
-    Returns:
-        int: The numerical value
-    '''
     num_base = 10
     if num_str[0] == "$": num_str = "0x" + num_str[1:]
     if num_str[:2] == "0x": num_base = 16
@@ -1813,11 +1605,10 @@ def str_to_int(num_str):
         return False
 
 
+'''
+Display Spasm's help information.
+'''
 def show_help():
-    '''
-    Display Spasm's help information.
-    '''
-
     print(" ")
     print("SPASM is an assembler/disassembler for the 8-bit Motorola 6809 chip family.")
     print(" ")
@@ -1847,10 +1638,10 @@ def show_help():
     print(" ")
 
 
+'''
+Display Spasm's version
+'''
 def show_version():
-    '''
-    Display Spasm's version
-    '''
     print("SPASM " + VERSION)
     print("SPASM copyright (c) 2021 Tony Smith (@smittytone)")
 
