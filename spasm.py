@@ -40,7 +40,7 @@ def assemble_file(file_path):
     app_state.labels = []
     app_state.code = []
     lines = []
-
+    print("***")
     # Check that the passed file is available to process
     if not os.path.exists(file_path):
         print("[ERROR] File " + file_path + " does not exist, skipping")
@@ -1582,8 +1582,10 @@ Args:
 def handle_files(the_files=None):
     if the_files:
         for one_file in the_files:
-            if one_file[-2:] == "sm": assemble_file(one_file)
-            if one_file[-2:] in ("09", "om"): disassemble_file((one_file, True))
+            _, file_ext = os.path.splitext(one_file)
+            print(file_ext)
+            if file_ext in (".asm", ".asm6809"): assemble_file(one_file)
+            if file_ext in (".6809", ".rom"): disassemble_file((one_file, True))
 
 
 '''
