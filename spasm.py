@@ -4,7 +4,7 @@
 'SPASM' -- Smittytone's Primary 6809 ASeMmbler
 
 Version:
-    1.3.0
+    1.3.1
 
 Copyright:
     2021, Tony Smith (@smittytone)
@@ -1548,7 +1548,7 @@ def get_files():
     dis_files = []
     for found_file in found_files:
         _, file_ext = os.path.splitext(found_file)
-        if file_ext == ".asm": asm_files.append(found_file)
+        if file_ext in (".asm", ".asm6890"): asm_files.append(found_file)
         if file_ext in (".6809", ".rom"): dis_files.append(found_file)
 
     # Display file type breakdown
@@ -1556,9 +1556,9 @@ def get_files():
     if asm_count == 1:
         show_verbose("Processing 1 .asm file in " + current_dir)
     elif asm_count > 1:
-        show_verbose("Processing " + str(asm_count) + " .asm files in " + current_dir)
+        show_verbose("Processing " + str(asm_count) + " .asm/.asm6809 files in " + current_dir)
     else:
-        show_verbose("No suitable .asm files found in " + current_dir)
+        show_verbose("No suitable .asm/.asm6809 files found in " + current_dir)
 
     dis_count = len(dis_files)
     if dis_count == 1:
@@ -1612,8 +1612,8 @@ def show_help():
     print(" ")
     print("SPASM is an assembler/disassembler for the 8-bit Motorola 6809 chip family.")
     print(" ")
-    print("Place one or more '*.asm' files in this directory and just call the tool,")
-    print("or assemble specific files by providing them as arguments.")
+    print("Place one or more '*.asm' or '*.asm6809' files in this directory and just call")
+    print("the tool, or assemble specific files by providing them as arguments.")
     print(" ")
     print("Place one or more '*.6809' or '.rom' files in this directory and call the tool,")
     print("or disassemble specific files by providing them as arguments.")
@@ -1721,7 +1721,7 @@ if __name__ == '__main__':
                 elif index != 0 and arg_flag is False:
                     # Handle any included .asm, .6809 or .rom files
                     _, arg_file_ext = os.path.splitext(item)
-                    if arg_file_ext in (".asm", ".6809", ".rom"):
+                    if arg_file_ext in (".asm", ".asm6809", ".6809", ".rom"):
                         arg_files.append(item)
                     else:
                         print("[ERROR] File " + item + " is not a .asm, .6809 or .rom file")
