@@ -649,6 +649,9 @@ def process_pseudo_op(line_parts, line):
                 show_verbose("Label " + label["name"] + " set to 0x" +
                              to_hex(opnd_value, 4) + " (line " + str(line.line_number + 1) + ")")
 
+    # TODO
+    # Add SETDP
+
     if line.pseudo_op_type == 8:
         # FCC: Pokes in a string
         result = write_code(line_parts, line)
