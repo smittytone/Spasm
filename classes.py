@@ -10,7 +10,7 @@ A very simple class to hold the temporary decode data for a line of
 '''
 class LineData:
     def __init__(self):
-        self.oper = []
+        self.oper = []               # The line elements
         self.opnd = -1
         self.op_type = 0
         self.branch_op_type = 0

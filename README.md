@@ -1,4 +1,4 @@
-# SPASM ‘Smittytone’s Primary 6809 ASeMbler’ 1.3.0 #
+# SPASM ‘Smittytone’s Primary 6809 ASeMbler’ 1.3.1 #
 
 *spasm* is an assembler/disassembler for the Motorola 6809 microprocessor written in Python 3.
 
@@ -71,6 +71,7 @@ Comments can be entered by prefixing them with a `;` or `*` (for DREAM fans). At
 - `EQU` &mdash; assign a value to a label, eg. `label EQU 255`.
 - `END` &mdash; optional end-of-code marker.
 - `RMB` &mdash; reserve *n* memory bytes at this address, eg. `label RMB 8 ; add 8 bytes for data storage`.
+- `ZMB` &mdash; reserve *n* memory bytes at this address and zero them, eg. `label ZMB 8`.
 - `FCB` &mdash; store the following 8-bit value or values at this address, eg.
     - `label FCB $FF          ; poke 255 to this address`.
     - `label FCB $FF,$01,$02  ; poke 255, 0, 2 to sequential addresses from this`.
@@ -196,7 +197,9 @@ See below for a full list of *spasm* switches.
 
 ## Release Notes ##
 
-- 1.3.0 &mdash; *Unreleased*
+- 1.3.1 &mdash; *Unreleased*
+    - Add `ZMB` directive.
+- 1.3.0 &mdash; *2 September 2021*
     - Separate out class and constant files.
 - 1.2.1 &mdash; *5 August 2021*
     - Remove requirement for `@` as a label prefix.

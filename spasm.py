@@ -239,11 +239,11 @@ def parse_line(line, line_number):
     return result
 
 
-def find_comments(line, symbol, comment):
-    l = line.find(symbol)
+def find_comments(line, comment_symbol, comment):
+    l = line.find(comment_symbol)
     if l != -1:
         # Found a comment line so re-position it
-        comment = symbol + line[l + 1:]
+        comment = comment_symbol + line[l + 1:]
         line = line[:l]
     return (line, comment)
 
@@ -288,7 +288,6 @@ def decode_op(an_op, line):
     an_op = an_op.upper()
 
     # Check for pseudo-ops
-    #pseudo_ops = ("EQU", "RMB", "FCB", "FDB", "END", "ORG", "SETDP", "FCC")
     if an_op in POPS:
         line.oper = [an_op]
         line.pseudo_op_type = POPS.index(an_op) + 1
@@ -541,16 +540,19 @@ def process_pseudo_op(line_parts, line):
                          to_hex(opnd_value) + " (line " + str(line.line_number + 1) + ")")
         result = write_code(line_parts, line)
 
-    if line.pseudo_op_type == 2:
+    if line.pseudo_op_type in (2, 9):
         # RMB: Reserve the next 'opnd_value' bytes and set the label to the current
         # value of the programme counter
+        # ZMB: Same as RMB, but zero the bytes
         if label_idx != -1:
             label = app_state.labels[label_idx]
             label["addr"] = app_state.prog_count
         if app_state.pass_count == 1:
             show_verbose(str(opnd_value) + " bytes reserved at address 0x" +
                          to_hex(app_state.prog_count, 4) + " (line " + str(line.line_number + 1) + ")")
-        for i in range(app_state.prog_count, app_state.prog_count + opnd_value): poke(i, 0x12)
+        if line.pseudo_op_type == 9:
+            for i in range(app_state.prog_count, app_state.prog_count + opnd_value):
+                poke(i, 0x00)
         result = write_code(line_parts, line)
         app_state.prog_count += opnd_value
 
@@ -815,8 +817,8 @@ Returns:
 def get_reg_value(reg):
     reg = reg.upper()
     regs = ("D", "X", "Y", "U", "S", "PC", "A", "B", "CC", "DP")
-    vals = ("0", "1", "2", "3", "4", "5", "8", "9", "A", "B")
-    if reg in regs: return vals[regs.index(reg)]
+    values = ("0", "1", "2", "3", "4", "5", "8", "9", "A", "B")
+    if reg in regs: return values[regs.index(reg)]
     return ""
 
 
@@ -832,8 +834,8 @@ Returns:
 def get_pull_reg_value(reg):
     reg = reg.upper()
     regs = ("CC", "A", "B", "D", "DP", "X", "Y", "S", "U", "PC")
-    vals = (1, 2, 4, 6, 8, 16, 32, 64, 64, 128)
-    if reg in regs: return vals[regs.index(reg)]
+    values = (1, 2, 4, 6, 8, 16, 32, 64, 64, 128)
+    if reg in regs: return values[regs.index(reg)]
     return -1
 
 
@@ -841,35 +843,35 @@ def get_pull_reg_value(reg):
 Convert a prefixed string value to an integer.
 
 Args:
-    num_str (str): The known numeric string.
-    size    (int): The number of bits in the value
+    constant_string (str): The known numeric string.
+    size            (int): The number of bits in the value
 
 Returns:
     int: A positive integer value.
 '''
-def get_int_value(num_str, size=8, do_twos=False):
+def get_int_value(constant_string, size=8, do_twos=False):
     value = 0
     is_negative = False
-    if num_str[0] == "-":
-        num_str = num_str[1:]
+    if constant_string[0] == "-":
+        constant_string = constant_string[1:]
         is_negative = True
-    if num_str == "!!!!":
+    if constant_string == "!!!!":
         value = 0
-    elif num_str[:2] == "0x":
+    elif constant_string[:2] == "0x":
         # Hex value
-        value = int(num_str, 16)
-    elif num_str[0].isalpha(): #== "@":
+        value = int(constant_string, 16)
+    elif constant_string[0].isalpha():
         # A label value
-        label = app_state.labels[index_of_label(num_str)]
+        label = app_state.labels[index_of_label(constant_string)]
         value = label["addr"]
-    elif num_str[0] == "%":
+    elif constant_string[0] == "%":
         # Binary data
-        value = decode_binary(num_str[1:])
-    elif num_str[0] == "'":
+        value = decode_binary(constant_string[1:])
+    elif constant_string[0] == "'":
         # Ascii data in the next character
-        value = ord(num_str[1])
+        value = ord(constant_string[1])
     else:
-        value = int(num_str)
+        value = int(constant_string)
 
     if is_negative: value *= -1
 
@@ -887,30 +889,30 @@ Encode an integer to a 'str_len' length hex string.
 
 Args:
     value   (int): The integer.
-    str_len (str): A string binary representation. Default: 2
+    length  (str): A string binary representation. Default: 2
 
 Returns:
     str: The hex representation
 '''
-def to_hex(value, str_len=2):
-    format_str = "{0:0" + str(str_len) + "X}"
-    return format_str.format(value)
+def to_hex(value, length=2):
+    format_string = "{0:0" + str(length) + "X}"
+    return format_string.format(value)
 
 
 '''
 Decode the supplied binary value (as a string, eg. '0010010') to an integer.
 
 Args:
-    bin_str (str): A string binary representation.
+    binary_string (str): A string binary representation.
 
 Returns:
-    int: The intger value.
+    int: The integer value.
 '''
-def decode_binary(bin_str):
+def decode_binary(binary_string):
     value = 0
-    for i in range(0, len(bin_str)):
-        bit = len(bin_str) - i - 1
-        if bin_str[bit] == "1": value += (2 ** i)
+    for i in range(0, len(binary_string)):
+        bit = len(binary_string) - i - 1
+        if binary_string[bit] == "1": value += (2 ** i)
     return value
 
 
@@ -1433,15 +1435,15 @@ def set_spacer(a_max, a_min=0):
 Convert a post-op byte value into a register name.
 
 Args:
-    byte_value (int): The post-op byte value.
+    post_byte_value (int): The post-op byte value.
 
 Returns:
     str: The indicated register.
 '''
-def get_indexed_reg(byte_value):
-    byte_value = (byte_value & 0x60) >> 5
+def get_indexed_reg(post_byte_value):
+    post_byte_value = (post_byte_value & 0x60) >> 5
     regs = ("X", "Y", "U", "S")
-    if byte_value < 4: return regs[byte_value]
+    if post_byte_value < 4: return regs[post_byte_value]
     return "N/A"
 
 
@@ -1450,15 +1452,15 @@ Generic TFR/EXG operand string generator, converting a post-op byte value
 into disassembled output, eg. "A,B".
 
 Args:
-    byte_value (int): The post-op byte value.
+    post_byte_value (int): The post-op byte value.
 
 Returns:
     str: The register string.
 '''
-def get_tfr_exg_regs(byte_value):
+def get_tfr_exg_regs(post_byte_value):
     reg_list = ("D", "X", "Y", "U", "S", "PC", "A", "B", "CC", "DP")
-    from_nibble = (byte_value & 0xF0) >> 4
-    to_nibble = byte_value & 0x0F
+    from_nibble = (post_byte_value & 0xF0) >> 4
+    to_nibble = post_byte_value & 0x0F
     from_str = reg_list[from_nibble - 2] if from_nibble > 5 else reg_list[from_nibble]
     to_str = reg_list[to_nibble - 2] if to_nibble > 5 else reg_list[to_nibble]
     return from_str + "," + to_str
@@ -1468,42 +1470,42 @@ def get_tfr_exg_regs(byte_value):
 Pass on the correct register lists for PSHS or PULS.
 
 Args:
-    byte_value (int): The post-op byte value.
+    post_byte_value (int): The post-op byte value.
 
 Returns:
     str: The list of registers referenced in the operand.
 '''
-def get_puls_pshs_regs(byte_value):
-    return get_pul_psh_regs(byte_value, ("CC", "A", "B", "DP", "X", "Y", "U", "PC"))
+def get_puls_pshs_regs(post_byte_value):
+    return get_pul_psh_regs(post_byte_value, ("CC", "A", "B", "DP", "X", "Y", "U", "PC"))
 
 
 '''
 Pass on the correct register lists for PSHU or PULU.
 
 Args:
-    byte_value (int): The post-op byte value..
+    post_byte_value (int): The post-op byte value..
 
 Returns:
     str: The list of registers referenced in the operand.
 '''
-def get_pulu_pshu_regs(byte_value):
-    return get_pul_psh_regs(byte_value, ("CC", "A", "B", "DP", "X", "Y", "S", "PC"))
+def get_pulu_pshu_regs(post_byte_value):
+    return get_pul_psh_regs(post_byte_value, ("CC", "A", "B", "DP", "X", "Y", "S", "PC"))
 
 
 '''
 Generic PUL/PSH operand string generator.
 
 Args:
-    byte_value (int):  The post-op byte value.
-    reg_list   (list): Names of possible registers.
+    post_byte_value (int):  The post-op byte value.
+    reg_list        (list): Names of possible registers.
 
 Returns:
     str: The list of registers referenced in the operand.
 '''
-def get_pul_psh_regs(byte_value, reg_tuple):
+def get_pul_psh_regs(post_byte_value, reg_tuple):
     output = ""
     for i in range(0, 8):
-        if byte_value & (2 ** i) > 0:
+        if post_byte_value & (2 ** i) > 0:
             # Bit is set, so add the register to the output string
             output += (reg_tuple[i] + ",")
     # Remove the final comma and return the output string, eg. "CC,A,X,Y,PC"

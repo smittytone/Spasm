@@ -1,6 +1,6 @@
 *
 * This is a sample program
-* NOTE all comments go after a semi-colon
+* NOTE All comments go after a semi-colon
 *
 
 tab_len     EQU $FF             ; Table length

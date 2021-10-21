@@ -4,7 +4,7 @@
 # Application-specific constants                                         #
 ##########################################################################
 
-VERSION = "1.2.1"
+VERSION = "1.3.1"
 
 ERRORS = {"0": "No error",
           "1": "Bad mnemonic/opcode",
@@ -37,6 +37,7 @@ PSEUDO_OP_END               = 4 # pylint: disable=C0326;
 PSEUDO_OP_ORG               = 5 # pylint: disable=C0326;
 PSEUDO_OP_SETDP             = 6 # pylint: disable=C0326;
 PSEUDO_OP_FCC               = 7 # pylint: disable=C0326;
+PSEUDO_OP_ZMB               = 8 # pylint: disable=C0326;
 
 ##########################################################################
 # The main 6809 instruction set in the form: mnemonic plus               #
@@ -176,4 +177,4 @@ BSA = (
     "BSR", 0x8D, 0x17
 )
 
-POPS = ("EQU", "RMB", "FCB", "FDB", "END", "ORG", "SETDP", "FCC")
+POPS = ("EQU", "RMB", "FCB", "FDB", "END", "ORG", "SETDP", "FCC", "ZMB")
