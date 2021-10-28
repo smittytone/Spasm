@@ -199,6 +199,7 @@ See below for a full list of *spasm* switches.
 
 - 1.3.1 &mdash; *Unreleased*
     - Add `ZMB` directive.
+    - Add output to `.rom` binaries.
 - 1.3.0 &mdash; *2 September 2021*
     - Separate out class and constant files.
 - 1.2.1 &mdash; *5 August 2021*

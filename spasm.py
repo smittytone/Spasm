@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""
+'''
 'SPASM' -- Smittytone's Primary 6809 ASeMmbler
 
 Version:
@@ -11,7 +11,7 @@ Copyright:
 
 License:
     MIT (terms attached to this repo)
-"""
+'''
 
 ##########################################################################
 # Program library imports                                                #
@@ -40,7 +40,6 @@ def assemble_file(file_path):
     app_state.labels = []
     app_state.code = []
     lines = []
-    print("***")
     # Check that the passed file is available to process
     if not os.path.exists(file_path):
         print("[ERROR] File " + file_path + " does not exist, skipping")
@@ -99,7 +98,7 @@ def assemble_file(file_path):
     if app_state.out_file is not None:
         if app_state.out_file == "*":
             app_state.out_file, _ = os.path.splitext(file_path)
-            app_state.out_file += ".6809"
+            app_state.out_file += ".rom"
         write_file(app_state.out_file)
 
     # Temp section for testing
@@ -1526,19 +1525,27 @@ def write_file(file_path=None):
     # FROM 1.2.0: The 'code' field is a sequence of hex values
     if file_path:
         op_data = []
-        for chunk in app_state.code:
-            # Build the output data string
-            byte_str = ""
-            for a_byte in chunk["code"]: byte_str += ("%02X" % a_byte)
+        _, ext = os.path.splitext(file_path)
+        if ext == ".rom":
+            byte_arr = bytearray()
+            for chunk in app_state.code:
+                for a_byte in chunk["code"]: byte_arr += (a_byte.to_bytes(length=1, byteorder='big'))
+            with open(file_path, "wb") as file: file.write(byte_arr)
+            print("File " + os.path.abspath(file_path) + " written")
+        else:
+            for chunk in app_state.code:
+                # Build the output data string
+                byte_str = ""
+                for a_byte in chunk["code"]: byte_str += ("%02X" % a_byte)
 
-            # Build the dictionary and add to the data array
-            op_part = {"address": chunk["address"], "code": byte_str}
-            op_data.append(op_part)
-        json_op = json.dumps(op_data, ensure_ascii=False)
+                # Build the dictionary and add to the data array
+                op_part = {"address": chunk["address"], "code": byte_str}
+                op_data.append(op_part)
+            json_op = json.dumps(op_data, ensure_ascii=False)
 
-        # Write out the file
-        with open(file_path, "w") as file: file.write(json_op)
-        print("File " + os.path.abspath(file_path) + " written")
+            # Write out the file
+            with open(file_path, "w") as file: file.write(json_op)
+            print("File " + os.path.abspath(file_path) + " written")
 
 
 '''
@@ -1691,8 +1698,8 @@ if __name__ == '__main__':
                 else:
                     app_state.out_file = sys.argv[index + 1]
                     _, out_file_ext = os.path.splitext(app_state.out_file)
-                    if out_file_ext != ".6809":
-                        print("[ERROR] -o / --outfile must specify a .6809 sfile")
+                    if out_file_ext not in (".6809", ".rom"):
+                        print("[ERROR] -o / --outfile must specify a .6809 or .rom file")
                         sys.exit(1)
                     # Make sure 'outfile' is a .6809 file
                     parts = app_state.out_file.split(".")
