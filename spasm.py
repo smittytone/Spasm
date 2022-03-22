@@ -4,7 +4,7 @@
 'SPASM' -- Smittytone's Primary 6809 ASeMmbler
 
 Version:
-    1.3.1
+    1.3.0
 
 Copyright:
     2021, Tony Smith (@smittytone)

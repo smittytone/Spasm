@@ -4,7 +4,7 @@
 # Application-specific constants                                         #
 ##########################################################################
 
-VERSION = "1.3.1"
+VERSION = "1.3.0"
 
 ERRORS = {"0": "No error",
           "1": "Bad mnemonic/opcode",
